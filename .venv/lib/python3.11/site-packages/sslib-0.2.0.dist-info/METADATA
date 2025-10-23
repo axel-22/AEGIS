@@ -1,0 +1,15 @@
+Metadata-Version: 2.0
+Name: sslib
+Version: 0.2.0
+Summary: A Python3 library for sharing secrets.
+Home-page: https://github.com/jqueiroz/python-sslib
+Author: Jonathan Queiroz
+Author-email: dev@johnjq.com
+License: MIT
+Description-Content-Type: UNKNOWN
+Platform: UNKNOWN
+Requires-Python: >=3
+
+UNKNOWN
+
+
