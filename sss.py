@@ -1,6 +1,5 @@
 # AEGIS - NowBlackout ENSIBS 2025
-# @uthor: Axel JEMAI
-# Last modified: 2025-20-10
+# Last modified: 2025-27-10
 # Implementation of the SSS (Shamir's Secret Sharing) algorithm
 
 import random
