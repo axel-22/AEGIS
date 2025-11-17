@@ -29,14 +29,16 @@ CREATE TABLE USERS (
 CREATE TABLE BADGES (
     badge_id INTEGER PRIMARY KEY AUTOINCREMENT,
     the_user INTEGER REFERENCES USERS(user_id),
-    header_id VARCHAR(50) NOT NULL,          
+    header_id VARCHAR(100) NOT NULL,          
     issued_at DATETIME NOT NULL,
     expires_at DATETIME NOT NULL,
-    pem_path VARCHAR(100) NOT NULL,
     json_path VARCHAR(100) NOT NULL,
+    json_integrity VARCHAR(100) NOT NULL,
+    totp_secret VARCHAR(100) NOT NULL,
+    totp_salt VARCHAR(100) NOT NULL,
     is_revoked BOOLEAN NOT NULL CHECK (is_revoked IN (0, 1)),
     revoked_at DATETIME,
-    revoked_reason VARCHAR(50) NOT NULL
+    revoked_reason VARCHAR(100)
 );
 
 -- ========== 3. VOTES =======================

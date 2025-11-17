@@ -64,66 +64,88 @@ def main():
         #Section A - Utilisateurs
         if choice[0] == "A" and choice[1] == "1":
             print("\n📋 Liste des utilisateurs actifs...\n")
+            a.list_users(True)
+            print("Enter pour continuer...")
+            input()
 
         elif choice[0] == "A" and choice[1] == "2":
             print("\n🚫 Liste des utilisateurs révoqués...\n")
+            a.list_users(False)
+            print("Enter pour continuer...")
+            input()
 
         elif choice[0] == "A" and choice[1] == "3":
             print("\n👤 Ajout d’un nouvel utilisateur...\n")
             a.create_user()
-
+            print("Enter pour continuer...")
+            input()
         elif choice[0] == "A" and choice[1] == "4":
             print("\n🗑️ Suppression d’un utilisateur...\n")
-
+            print("Enter pour continuer...")
+            input()
         elif choice[0] == "A" and choice[1] == "5":
             print("\n🔄 Réinitialisation des droits d’un utilisateur...\n")
-        
+            print("Enter pour continuer...")
+            input()      
         
         #Section B - Badges
         elif choice[0] == "B" and choice[1] == "1":
             print("\n🪪 Liste des badges actifs...\n")
-
+            print("Enter pour continuer...")
+            input()
         elif choice[0] == "B" and choice[1] == "2":
             print("\n⌛ Liste des badges expirés...\n")
-
+            print("Enter pour continuer...")
+            input()
         elif choice[0] == "B" and choice[1] == "3":
             print("\n🚫 Révocation d’un badge compromis...\n")
-
+            print("Enter pour continuer...")
+            input()
 
         #Section C - Votes
         elif choice[0] == "C" and choice[1] == "1":
             print("\n📩 Création d’un nouveau vote...\n")
-
+            print("Enter pour continuer...")
+            input()
         elif choice[0] == "C" and choice[1] == "2":
             print("\n👀 Affichage du vote en cours...\n")
-
+            print("Enter pour continuer...")
+            input()
         elif choice[0] == "C" and choice[1] == "3":
             print("\n🧾 Historique des votes précédents...\n")
-
+            print("Enter pour continuer...")
+            input()
         elif choice[0] == "C" and choice[1] == "4":
             print("\n🔗 Vérification de la chaîne d’intégrité (hashchain)...\n")
-
+            print("Enter pour continuer...")
+            input()
 
         #Section D - Sécurité & Outils
         elif choice[0] == "D" and choice[1] == "1":
             print("\n✒️ Vérification de la signature d’un badge...\n")
-
+            print("Enter pour continuer...")
+            input()
         elif choice[0] == "D" and choice[1] == "2":
             print("\n🔑 Génération d’une paire de clés RSA...\n")
-
+            print("Enter pour continuer...")
+            input()
         elif choice[0] == "D" and choice[1] == "3":
             print("\n🤳 Simulation d’un challenge TOTP + Tap...\n")
-
+            print("Enter pour continuer...")
+            input()
         #Section E - Maintenance & Logs
         elif choice[0] == "E" and choice[1] == "1":
             print("\n📰 Vérification de la cohérence interne de la base...\n")
-
+            print("Enter pour continuer...")
+            input()
         elif choice[0] == "E" and choice[1] == "2":
             print("\n 📊  Export des logs vers le SIEM...\n")
-
+            print("Enter pour continuer...")
+            input()
         elif choice[0] == "E" and choice[1] == "3":
             print("\n💾 Sauvegarde complète de la base de données...\n")
-
+            print("Enter pour continuer...")
+            input()
 
         # Exit option    
         elif choice == "0": 
