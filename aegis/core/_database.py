@@ -26,6 +26,18 @@ def set_debug(state: bool):
     if DEBUG:
         print(f"🔧 SQLAlchemy debug mode = {DEBUG}")
 
+def init_db():
+    """
+    Crée les tables à partir des modèles SQLAlchemy.
+    """
+    if engine is None:
+        raise RuntimeError("Engine non initialisé. Appelle init_engine() avant init_db().")
+
+    Base.metadata.create_all(bind=engine)
+
+    if DEBUG:
+        print("🗄️  Base de données SQLite initialisée")
+
 def get_session():
     """Renvoie une nouvelle session SQLAlchemy."""
     return SessionLocal()
@@ -34,11 +46,6 @@ def get_session():
 def get_sqlite3_conn():
     conn = sqlite3.connect(DB_PATH)
     return conn
-
-# Connexion SQLAlchemy
-def init_db():
-    Base.metadata.create_all(bind=engine)
-    print("Base de données initialisée avec SQLAlchemy.")
 
 def raw_query_with_sqlite3():
     conn = get_sqlite3_conn()
@@ -134,6 +141,7 @@ def assign_badge_to_user(badge_id, user_id):
 
 if __name__ == "__main__":
     # Initialisation DB via SQLAlchemy
+    set_debug(True)
     init_db()
 
     # Test requête sqlite3 native

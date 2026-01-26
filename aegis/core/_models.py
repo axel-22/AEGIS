@@ -32,36 +32,6 @@ class USERS(Base):
     VOTES: Mapped[list['VOTES']] = relationship('VOTES', back_populates='creator_user')
     ENVELOPES: Mapped[list['ENVELOPES']] = relationship('ENVELOPES', back_populates='USERS_')
 
-
-t_badges = Table(
-    'badges', Base.metadata,
-    Column('badge_id', Integer),
-    Column('the_user', Integer),
-    Column('header_id', String(50), nullable=False),
-    Column('issued_at', DateTime, nullable=False),
-    Column('expires_at', DateTime, nullable=False),
-    Column('is_revoked', Boolean, nullable=False),
-    Column('totp_secret', String(100), nullable=False),
-    Column('revoked_at', DateTime),
-    Column('revoked_reason', String(50), nullable=False)
-)
-
-
-t_users = Table(
-    'users', Base.metadata,
-    Column('user_id', Integer),
-    Column('username', String(50), nullable=False),
-    Column('first_name', String(50), nullable=False),
-    Column('last_name', String(50), nullable=False),
-    Column('email', String(50)),
-    Column('job', String(50)),
-    Column('the_role', String(50)),
-    Column('can_vote', Boolean, nullable=False),
-    Column('created_at', DateTime),
-    Column('updated_at', DateTime)
-)
-
-
 class BADGES(Base):
     __tablename__ = 'BADGES'
 
@@ -127,7 +97,7 @@ class ENVELOPES(Base):
     envelope_id: Mapped[Optional[int]] = mapped_column(Integer, primary_key=True)
     the_vote: Mapped[Optional[int]] = mapped_column(ForeignKey('VOTES.vote_id'))
     the_user: Mapped[Optional[int]] = mapped_column(ForeignKey('USERS.user_id'))
-    the_badge: Mapped[Optional[int]] = mapped_column(ForeignKey('badges.badge_id'))
+    the_badge: Mapped[Optional[int]] = mapped_column(ForeignKey('BADGES.badge_id'))
     prev_hash: Mapped[Optional[str]] = mapped_column(String(100))
 
     USERS_: Mapped[Optional['USERS']] = relationship('USERS', back_populates='ENVELOPES')
@@ -156,7 +126,7 @@ class NONCES(Base):
     nonce: Mapped[Optional[str]] = mapped_column(String(50))
     the_envelope: Mapped[Optional[int]] = mapped_column(ForeignKey('ENVELOPES.envelope_id'))
     issued_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    used_by: Mapped[Optional[decimal.Decimal]] = mapped_column(ForeignKey('users.user_id'))
+    used_by: Mapped[Optional[decimal.Decimal]] = mapped_column(ForeignKey('USERS.user_id'))
     used_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
 
     ENVELOPES_: Mapped[Optional['ENVELOPES']] = relationship('ENVELOPES', back_populates='NONCES')

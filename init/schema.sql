@@ -32,10 +32,7 @@ CREATE TABLE BADGES (
     header_id VARCHAR(100) NOT NULL,          
     issued_at DATETIME NOT NULL,
     expires_at DATETIME NOT NULL,
-    json_path VARCHAR(100) NOT NULL,
-    json_integrity VARCHAR(100) NOT NULL,
     totp_secret VARCHAR(100) NOT NULL,
-    totp_salt VARCHAR(100) NOT NULL,
     is_revoked BOOLEAN NOT NULL CHECK (is_revoked IN (0, 1)),
     revoked_at DATETIME,
     revoked_reason VARCHAR(100)
