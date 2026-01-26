@@ -2,7 +2,10 @@
 # Last modified: 2025-27-10
 # CLI Interface - Command Line Interface for AEGIS Application
 
-from aegis.services import users, badges, ac
+import os
+from pathlib import Path
+
+from aegis.services import users, badges
 
 def create_user():
     """Interface CLI pour créer un nouvel utilisateur."""
@@ -47,32 +50,32 @@ def create_user():
         print(f"Erreur lors de la récupération de l'utilisateur par son nom: {e}")
         return
 
-    yes_no = "oui"
-
-    try:
-        exist = badges.is_keys_existing(new_user.username)
-        if not exist:
-            pass
-    except FileExistsError as e:
-        print(f"/!\ Warning les clés pour {new_user.username} existe déja, souhaitez vous les renouvelers : {e}")
-        yes_no = input("➡️  Entrée 'oui' pour renouveler les clés, ou 'non' pour quitter : ").strip().lower()      
-        while yes_no not in ["oui", "non"]:
-            print("❌ Entrée invalide. Veuillez répondre par 'oui' ou 'non'.")
-            yes_no = input("➡️  Entrée 'oui' pour renouveler les clés, ou 'non' pour quitter : ").strip().lower()
-    
-    if yes_no == "oui":
-        secret = badges.generate_totp_secret()
-        print("➡️  Veuillez enregistrer ce secret dans votre application Google Authenticator :", secret)
-        print("➡️  Un badge TOTP va être créé et attaché à l'utilisateur.")
-        print("🚫   Ne partager ce secret à personne !")
-        ac_passphrase = input("➡️  Entrée la passphrase de l'AC pour signer le badge : ").strip()
+    print("➡️  Maintenant, nous allons configurer le badge NFC pour cet utilisateur.")
+    print("➡️  1 - Configuration du TOTP.")
+    secret = badges.generate_totp_secret()
+    print("➡️  Veuillez enregistrer ce secret dans votre application Google Authenticator :", secret)
+    print("➡️  Un badge TOTP va être créé et attaché à l'utilisateur.")
+    print("🚫   Ne partager ce secret à personne !")
+    print("➡️  2 - Scan du badge NFC.")
+    print("➡️  Veuillez scanner le badge NFC à l'aide du lecteur NFC...")
+    header_id = 0
+    while(header_id == 0):
         try:
-            b = badges.create_badge(new_user.username, secret, ac_passphrase)
-        except Exception as e:
-            print(f"Erreur lors de la création du badge : {e}")
+            header_id = badges.get_header_id_from_nfc()
+            print(f"➡️  Badge NFC scanné avec succès. Header ID : {header_id}")
+        except RuntimeError as e:
+            print(f"Erreur : {e}")
             return
-        
-        badges.attach_badge_to_user(b.badge_id, new_user.user_id)
+    try:
+        b = badges.create_badge(new_user.username, secret, header_id)
+    except Exception as e:
+        print(f"Erreur lors de la création du badge : {e}")
+        return
+
+    badges.attach_badge_to_user(b.badge_id, new_user.user_id)
+    print(f"✅ Badge créé avec l'ID {b.badge_id} et attaché à l'utilisateur '{new_user.username}'.")
+    print("✅ Utilisateur et badge configurés avec succès !")
+    
 
 def list_users(is_revoked: bool):
     """Interface CLI pour lister les utilisateurs."""
@@ -85,37 +88,33 @@ def list_users(is_revoked: bool):
     print("\n👤"+"═" * 30 +f" Total: {len(allusers)} utilisateurs {status} dans la base "+"═" * 30)
 
 
-def ac_setup():
-    """Interface CLI pour configurer le service AC."""
-    print("⚙️  Configuration du service AC")
-    yes_no = "oui"
-    try:
-        exist = ac.is_ac_keys_existing()
-        if not exist:
-            pass
-    except FileExistsError as e:
-        print(f"/!\ Warning les clés Maitres existe déja, souhaitez vous les renouvelers : {e}")
-        yes_no = input("➡️  Entrée 'oui' pour renouveler les clés, ou 'non' pour quitter : ").strip().lower()      
-        while yes_no not in ["oui", "non"]:
-            print("❌ Entrée invalide. Veuillez répondre par 'oui' ou 'non'.")
-            yes_no = input("➡️  Entrée 'oui' pour renouveler les clés, ou 'non' pour quitter : ").strip().lower()
-    
-    if yes_no == "oui":
-        print("/!\ Veuillez garder cette passphrase en sécurité et la mémoriser! sinon les données perdu /!\ ")
-        passphrase = input("➡️  Entrée la passphrase  : ").strip()
-        verify_passphrase = input("➡️  Entrée de nouveaux la passphrase : ").strip()
-        while passphrase != verify_passphrase:
-            print("❌ Les passphrases ne correspondent pas. Veuillez réessayer.")
-            passphrase = input("➡️  Entrée la passphrase  : ").strip()
-            verify_passphrase = input("➡️  Entrée de nouveaux la passphrase : ").strip()
+def fernet_key():
+    """Interface CLI pour générer une clé Fernet et sauvegarder dans secrets.env"""
+    secrets_dir = Path("aegis/secrets")
+    secrets_file = secrets_dir / "secrets.env"
 
-        ac.generate_ac_keys(passphrase)    
+    print("🔑 Génération d'une clé Fernet")
+    key = badges.generate_fernet_key()
 
-        print("[AC] Generated new AC keypair and saved to disk.")
-    else:
-        print("❌ Configuration annulée par l'utilisateur.")
-    print("✅Configuration terminée.")
+    # Crée le dossier secrets s'il n'existe pas
+    secrets_dir.mkdir(parents=True, exist_ok=True)
 
+    # Si le fichier existe déjà, avertir l'utilisateur avant d'écraser
+    if secrets_file.exists():
+        print(f"⚠️ Le fichier {secrets_file} existe déjà.")
+        print("⚠️ Si vous vous l'écrasez, vous ne pourrez plus badger avec les utilisateurs actuels.")
+        confirm = input("Voulez-vous écraser la clé existante ? (oui/non) : ").strip().lower()
+        if confirm not in ('oui', 'o', 'yes', 'y'):
+            print("Abandon de la génération de la clé.")
+            return
+
+    # Écriture de la clé dans le fichier au format .env
+    with secrets_file.open("w", encoding="utf-8") as f:
+        f.write(f"FERNET_KEY={key}\n")
+
+    print(f"➡️  Clé Fernet générée et sauvegardée dans {secrets_file}")
+    print("⚠️ Veuillez sauvegarder cette clé en lieu sûr. Elle est nécessaire pour le chiffrement et le déchiffrement des données.")
+    print("👉 Pensez à modifier la clé si vous réutilisez un ancien fichier secrets.env.")
 
 
 if __name__ == "__main__":

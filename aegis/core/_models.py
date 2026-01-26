@@ -40,11 +40,8 @@ t_badges = Table(
     Column('header_id', String(50), nullable=False),
     Column('issued_at', DateTime, nullable=False),
     Column('expires_at', DateTime, nullable=False),
-    Column('json_integrity', String(100), nullable=False),
-    Column('json_path', String(100), nullable=False),
     Column('is_revoked', Boolean, nullable=False),
     Column('totp_secret', String(100), nullable=False),
-    Column('totp_salt', String(100), nullable=False),
     Column('revoked_at', DateTime),
     Column('revoked_reason', String(50), nullable=False)
 )
@@ -71,11 +68,8 @@ class BADGES(Base):
     header_id: Mapped[str] = mapped_column(String(50), nullable=False)
     issued_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
-    json_integrity: Mapped[str] = mapped_column(String(100), nullable=False)
-    json_path: Mapped[str] = mapped_column(String(100), nullable=False)
     is_revoked: Mapped[bool] = mapped_column(Boolean, nullable=False)
     totp_secret: Mapped[str] = mapped_column(String(100), nullable=False)
-    totp_salt: Mapped[str] = mapped_column(String(100), nullable=False)
     revoked_reason: Mapped[str] = mapped_column(String(50))
     badge_id: Mapped[Optional[int]] = mapped_column(Integer, primary_key=True)
     the_user: Mapped[Optional[int]] = mapped_column(ForeignKey('USERS.user_id'))

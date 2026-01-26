@@ -37,7 +37,7 @@ def show_menu():
     print("  4 →  🔗 Vérifier la chaîne d’intégrité (blockchain)\n")
 
     print("🧠  Sécurité & Outils - D")
-    print("  1 →   ✒️ Vérifier la signature et la non-répudiation d’un badge")
+    print("  1 →   🔑 Générer la clé secret Fernet")
     print("  2 →   🔑 Générer une paire de clés RSA")
     print("  3 →   🤳 Simuler un challenge d’authentification (Tap + TOTP)")
 
@@ -122,7 +122,8 @@ def main():
 
         #Section D - Sécurité & Outils
         elif choice[0] == "D" and choice[1] == "1":
-            print("\n✒️ Vérification de la signature d’un badge...\n")
+            print("\n🔑 Génération de la clé secret Fernet \n")
+            a.fernet_key()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "D" and choice[1] == "2":
