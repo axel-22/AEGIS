@@ -19,15 +19,13 @@ class USERS(Base):
     username: Mapped[str] = mapped_column(String(50), nullable=False)
     first_name: Mapped[str] = mapped_column(String(50), nullable=False)
     last_name: Mapped[str] = mapped_column(String(50), nullable=False)
-    can_vote: Mapped[bool] = mapped_column(Boolean, nullable=False)
     user_id: Mapped[Optional[int]] = mapped_column(Integer, primary_key=True)
     email: Mapped[Optional[str]] = mapped_column(String(50))
     job: Mapped[Optional[str]] = mapped_column(String(50))
     the_role: Mapped[Optional[str]] = mapped_column(String(50))
     created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
     updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-
-    BADGES: Mapped[list['BADGES']] = relationship('BADGES', back_populates='USERS_')
+    BADGES: Mapped[Optional['BADGES']] = relationship('BADGES', back_populates='USERS_', uselist=False)
     SECRETS: Mapped[list['SECRETS']] = relationship('SECRETS', back_populates='creator_user')
     VOTES: Mapped[list['VOTES']] = relationship('VOTES', back_populates='creator_user')
     ENVELOPES: Mapped[list['ENVELOPES']] = relationship('ENVELOPES', back_populates='USERS_')
@@ -42,9 +40,8 @@ class BADGES(Base):
     totp_secret: Mapped[str] = mapped_column(String(100), nullable=False)
     revoked_reason: Mapped[str] = mapped_column(String(50))
     badge_id: Mapped[Optional[int]] = mapped_column(Integer, primary_key=True)
-    the_user: Mapped[Optional[int]] = mapped_column(ForeignKey('USERS.user_id'))
+    the_user: Mapped[Optional[int]] = mapped_column(ForeignKey('USERS.user_id'), unique=True)
     revoked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-
     USERS_: Mapped[Optional['USERS']] = relationship('USERS', back_populates='BADGES')
     SHARES: Mapped[list['SHARES']] = relationship('SHARES', back_populates='BADGES_')
 

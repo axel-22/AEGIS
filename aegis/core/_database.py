@@ -4,15 +4,17 @@
 
 import sqlite3
 from pathlib import Path
+from datetime import datetime
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import joinedload
 
-from aegis.core._models import Base, USERS, BADGES
+from aegis.core._models import Base, USERS, BADGES, SECRETS, ENVELOPES
+
 
 
 DB_PATH = Path("aegis.db")
-
 
 DEBUG = False  # valeur par défaut
 SessionLocal = None
@@ -82,18 +84,37 @@ def insert_user(user: 'USERS' ) -> 'USERS':
     finally:
         session.close()
 
-    
-
-
-def select_users(is_revoked: bool) -> list['USERS']:
-    """Lister les utilisateurs actifs ou révoqués."""
+def select_users(is_revoked: bool) -> list[tuple['USERS', int]]:
+    """
+    Lister les utilisateurs avec l'id de leur badge
+    (révoqué ou actif selon is_revoked)
+    """
     session = get_session()
     try:
-        if is_revoked:
-            users = session.query(USERS).filter(USERS.can_vote == False ).all()
-        else:
-            users = session.query(USERS).filter(USERS.can_vote == True).all()
-        return users
+        results = (
+            session.query(USERS, BADGES.badge_id)
+            .join(BADGES, BADGES.the_user == USERS.user_id)
+            .filter(BADGES.is_revoked == is_revoked)
+            .all()
+        )
+        return results
+    except Exception:
+        raise
+    finally:
+        session.close()
+
+def select_all_users() -> list[tuple['USERS', int]]:
+    """
+    Lister tous les utilisateurs avec leurs badges associés
+    """
+    session = get_session()
+    try:
+        results = (
+            session.query(USERS, BADGES.badge_id)
+            .outerjoin(BADGES, BADGES.the_user == USERS.user_id)
+            .all()
+        )
+        return results
     except Exception as e:
         raise e
     finally:
@@ -111,6 +132,33 @@ def select_user_by_username(username: str) -> 'USERS':
     finally:
         session.close()
 
+def select_user_with_badge_by_user_id(user_id: int, session=None) -> 'USERS':
+    close_session = False
+    if session is None:
+        session = get_session()
+        close_session = True
+    try:
+        user = session.query(USERS).options(joinedload(USERS.BADGES)).filter(USERS.user_id == user_id).one_or_none()
+        return user
+    finally:
+        if close_session:
+            session.close()
+
+def delete_secrets(user_id: int):
+    session = get_session()
+    try:
+        session.query(SECRETS).filter(SECRETS.creator_user_id == user_id).delete(synchronize_session=False)
+        session.commit()
+    finally:
+        session.close()
+
+def delete_envelopes(user_id: int):
+    session = get_session()
+    try:
+        session.query(ENVELOPES).filter(ENVELOPES.the_user == user_id).delete(synchronize_session=False)
+        session.commit()
+    finally:
+        session.close()
 
 def insert_badge(badge: 'BADGES') -> 'BADGES':
     session = get_session()
@@ -129,15 +177,29 @@ def assign_badge_to_user(badge_id, user_id):
     session = get_session()
     try:
         badge = session.get(BADGES, badge_id)
-        badge.owner_id = user_id
+        badge.the_user = user_id
         session.commit()
     except:
         session.rollback()
-        raise
+        raise RuntimeError("Erreur lors de l'assignation du badge à l'utilisateur.")
     finally:
         session.close()
 
-
+def update_user(user_id: int, user_data: dict) -> 'USERS':
+    """Éditer un utilisateur existant."""
+    session = get_session()
+    try:
+        user = session.get(USERS, user_id)
+        for key, value in user_data.items():
+            setattr(user, key, value)
+        session.commit()
+        session.refresh(user)
+        return user
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
 
 if __name__ == "__main__":
     # Initialisation DB via SQLAlchemy

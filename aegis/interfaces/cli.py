@@ -13,7 +13,6 @@ def create_user():
     nom = input("➡️  Nom de famille : ").strip().lower()
     username = input("➡️  Nom d'utilisateur : ").strip().lower()
     email = input("➡️  Email : ").strip().lower()
-    vote_input = input("➡️  Peut voter ? (oui/non) (par défaut) oui : ").strip().lower()
     metier = input("➡️  Métier (par défaut) développeur: ").strip().lower()
     role = input("➡️  Rôle : (par défaut) membre : ").strip().lower()
 
@@ -22,7 +21,6 @@ def create_user():
         "last_name": nom,
         "username": username,
         "email": email,
-        "can_vote": vote_input != "non",
         "job": metier if metier else "développeur",
         "the_role": role if role else "membre"
     }
@@ -36,7 +34,6 @@ def create_user():
         print(f"  - Nom de famille : {user.last_name}")
         print(f"  - Nom d'utilisateur : {user.username}")
         print(f"  - Email : {user.email}")
-        print(f"  - Peut voter : {user.can_vote}")
         print(f"  - Métier : {user.job}")
         print(f"  - Rôle : {user.the_role}\n")
     except ValueError as e:
@@ -77,16 +74,90 @@ def create_user():
     print("✅ Utilisateur et badge configurés avec succès !")
     
 
+def list_all_users():
+    """Interface CLI pour lister les utilisateurs."""
+    allusers = users.list_all_users()
+    print(f"\n📋 Liste de tous les utilisateurs:\n")
+    print("    - ID, Username, Name, Email, Job, Role, Badge ID")
+    for user in allusers:
+        print(f"    - {user[0].user_id}, {user[0].username}, {user[0].first_name}, {user[0].last_name}, {user[0].email}, {user[0].job}, {user[0].the_role}, {user[1]}")
+
+    print("\n👤"+"═" * 30 +f" Total: {len(allusers)} utilisateurs dans la base "+"═" * 30)
+
 def list_users(is_revoked: bool):
     """Interface CLI pour lister les utilisateurs."""
     allusers = users.list_users(is_revoked)
     status = "révoqués" if is_revoked else "actifs"
-    print(f"\n📋 Liste des utilisateurs {status} :\n")
+    emoji = "🚫" if is_revoked else "✅"
+    print(f"\n {emoji} Liste des utilisateurs {status} :\n")
+    print("  - ID, Username, Name, Email, Job, Role, Badge ID")
     for user in allusers:
-        print(f"  - ID: {user.user_id}, Username: {user.username}, Name: {user.first_name} {user.last_name}, Email: {user.email}, Can Vote: {user.can_vote}, Job: {user.job}, Role: {user.the_role}")
+        print(f"    - {user[0].user_id}, {user[0].username}, {user[0].first_name}, {user[0].last_name}, {user[0].email}, {user[0].job}, {user[0].the_role}, {user[1]}")
 
     print("\n👤"+"═" * 30 +f" Total: {len(allusers)} utilisateurs {status} dans la base "+"═" * 30)
 
+def edit_user():
+    """Interface CLI pour éditer un utilisateur."""
+    list_all_users()
+    username = input("➡️  Entrez le nom d'utilisateur de l'utilisateur à éditer : ").strip().lower()
+    try:
+        user = users.get_user_by_username(username)
+        if not user:
+            print(f"❌ Utilisateur '{username}' non trouvé.")
+            return
+    except Exception as e:
+        print(f"Erreur lors de la récupération de l'utilisateur : {e}")
+        return
+
+    print(f"\n✏️  Édition de l'utilisateur '{username}'. Laissez vide pour conserver la valeur actuelle.\n")
+    new_first_name = input(f"➡️  Prénom ({user.first_name}) : ").strip()
+    new_last_name = input(f"➡️  Nom de famille ({user.last_name}) : ").strip()
+    new_email = input(f"➡️  Email ({user.email}) : ").strip()
+    new_job = input(f"➡️  Métier ({user.job}) : ").strip()
+    new_role = input(f"➡️  Rôle ({user.the_role}) : ").strip()
+
+    user_data = {
+        "first_name": new_first_name if new_first_name else user.first_name,
+        "last_name": new_last_name if new_last_name else user.last_name,
+        "username": user.username,
+        "email": new_email if new_email else user.email,
+        "job": new_job if new_job else user.job,
+        "the_role": new_role if new_role else user.the_role
+    }
+
+    try:
+        updated_user = users.edit_user(user.user_id, user_data)
+        print(f"✅ Utilisateur '{updated_user.username}' mis à jour avec succès !")
+    except ValueError as e:
+        print(f"Erreur de validation : {e}")
+    except Exception as e:
+        print(f"Erreur lors de la mise à jour : {e}")
+
+def remove_user():
+    """Interface CLI pour supprimer un utilisateur."""
+    list_all_users()
+    username = input("➡️  Entrez le nom d'utilisateur de l'utilisateur à supprimer : ").strip().lower()
+    try:
+        user = users.get_user_by_username(username)
+        if not user:
+            print(f"❌ Utilisateur '{username}' non trouvé.")
+            return
+    except Exception as e:
+        print(f"Erreur lors de la récupération de l'utilisateur : {e}")
+        return
+
+    confirm = input(f"⚠️  Êtes-vous sûr de vouloir supprimer l'utilisateur '{username}' ? Cette action est irréversible. (oui/non) : ").strip().lower()
+    if confirm not in ('oui', 'o', 'yes', 'y'):
+        print("Abandon de la suppression de l'utilisateur.")
+        return
+
+    try:
+        users.remove_user(user.user_id)
+        print(f"✅ Utilisateur '{username}' supprimé avec succès !")
+    except Exception as e:
+        print(f"Erreur lors de la suppression de l'utilisateur : {e}")
+
+        
 
 def fernet_key():
     """Interface CLI pour générer une clé Fernet et sauvegarder dans secrets.env"""

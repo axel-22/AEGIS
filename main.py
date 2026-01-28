@@ -19,16 +19,20 @@ def show_menu():
     print("Veuillez sélectionner une action - Section puis Action (ex A1 pour lister les utilisteurs actifs):\n")
 
     print("👥  Utilisateurs - A")
-    print("  1 →  📋 Lister les utilisateurs actifs")
-    print("  2 →  🚫 Lister les utilisateurs révoqués")
-    print("  3️ →  ➕ Ajouter un utilisateur")
-    print("  4 →  🗑️ Supprimer un utilisateur")
-    print("  5 →  🔄 Réinitialiser les droits d’un utilisateur\n")
+    print("  1 →  📋 Lister les tous les utilisateurs")
+    print("  2 →  ✅ Lister les utilisateurs actifs")
+    print("  3 →  🚫 Lister les utilisateurs révoqués")
+    print("  4 →  ➕ Ajouter un utilisateur")
+    print("  5 →  🔄 Editer un utilisateur")
+    print("  6 →  🗑️ Supprimer un utilisateur\n")
+    
 
     print("🎫  Badges - B")
-    print("  1 →  🪪 Lister les badges actifs")
-    print("  2 →  ⌛ Lister les badges expirés")
-    print("  3 →  🚫 Révoquer un badge compromis\n")
+    print("  1 →  🪪 Lister tous les badges")
+    print("  2 →  ✅ Lister les badges actifs")
+    print("  3 →  ⌛ Lister les badges expirés")
+    print("  4 →  🚫 Révoquer un badge compromis\n")
+
 
     print("🗳️  Votes - C")
     print("  1 →  📩 Créer un nouveau vote")
@@ -57,40 +61,49 @@ def main():
         
         choice = input("➡️  Votre choix : ").strip()
         
-        while not (choice == "0" or (len(choice) == 2 and choice[0] in "ABCDE" and choice[1] in "12345")):
+        while not (choice == "0" or (len(choice) == 2 and choice[0] in "ABCDE" and choice[1] in "123456")):
             print("⚠️  Choix invalide, veuillez réessayer.")
             choice = input("➡️  Votre choix (ex A1 pour lister les utilisteurs actifs) : ").strip() 
 
         #Section A - Utilisateurs
         if choice[0] == "A" and choice[1] == "1":
-            print("\n📋 Liste des utilisateurs actifs...\n")
-            a.list_users(True)
+            print("\n 📋Liste de tous les utilisateurs...\n")
+            a.list_all_users()
             print("Enter pour continuer...")
             input()
-
         elif choice[0] == "A" and choice[1] == "2":
-            print("\n🚫 Liste des utilisateurs révoqués...\n")
+            print("\n ✅ Liste des utilisateurs actifs...\n")
             a.list_users(False)
             print("Enter pour continuer...")
             input()
-
         elif choice[0] == "A" and choice[1] == "3":
+            print("\n🚫 Liste des utilisateurs révoqués...\n")
+            a.list_users(True)
+            print("Enter pour continuer...")
+            input()
+        elif choice[0] == "A" and choice[1] == "4":
             print("\n👤 Ajout d’un nouvel utilisateur...\n")
             a.create_user()
             print("Enter pour continuer...")
             input()
-        elif choice[0] == "A" and choice[1] == "4":
-            print("\n🗑️ Suppression d’un utilisateur...\n")
-            print("Enter pour continuer...")
-            input()
         elif choice[0] == "A" and choice[1] == "5":
-            print("\n🔄 Réinitialisation des droits d’un utilisateur...\n")
+            print("\n🔄 Edition d’un utilisateur...\n")
+            a.edit_user()
             print("Enter pour continuer...")
-            input()      
+            input()  
+        elif choice[0] == "A" and choice[1] == "6":
+            print("\n🗑️ Suppression d’un utilisateur...\n")
+            a.remove_user()
+            print("Enter pour continuer...")
+            input()    
         
         #Section B - Badges
         elif choice[0] == "B" and choice[1] == "1":
-            print("\n🪪 Liste des badges actifs...\n")
+            print("\n🪪 Liste de tous les badges...\n")
+            print("Enter pour continuer...")
+            input()
+        elif choice[0] == "B" and choice[1] == "1":
+            print("\n✅ Liste des badges actifs...\n")
             print("Enter pour continuer...")
             input()
         elif choice[0] == "B" and choice[1] == "2":

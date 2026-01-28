@@ -20,7 +20,6 @@ CREATE TABLE USERS (
     email VARCHAR(50) UNIQUE,
     job VARCHAR(50),
     the_role VARCHAR(50), -- (member, validator, admin, superadmin etc.)
-    can_vote BOOLEAN NOT NULL CHECK (can_vote IN (0, 1)),
     created_at DATETIME,
     updated_at DATETIME
 );
