@@ -41,9 +41,9 @@ def show_menu():
     print("  4 →  🔗 Vérifier la chaîne d’intégrité (blockchain)\n")
 
     print("🧠  Sécurité & Outils - D")
-    print("  1 →   🔑 Générer la clé secret Fernet")
-    print("  2 →   🔑 Générer une paire de clés RSA")
-    print("  3 →   🤳 Simuler un challenge d’authentification (Tap + TOTP)")
+    print("  1 →   🔑 Générer une clé Fernet pour le TOTP")
+    print("  2 →   🔑 Générer une clé Fernet pour les votes confidentiels")
+    print("  3 →   🔑 Générer une clé Fernet pour les réponses confidentiels")
 
 
     print("📦  Maintenance & Logs - E")
@@ -122,6 +122,7 @@ def main():
         #Section C - Votes
         elif choice[0] == "C" and choice[1] == "1":
             print("\n📩 Création d’un nouveau vote...\n")
+            a.create_vote()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "C" and choice[1] == "2":
@@ -139,16 +140,18 @@ def main():
 
         #Section D - Sécurité & Outils
         elif choice[0] == "D" and choice[1] == "1":
-            print("\n🔑 Génération de la clé secret Fernet \n")
-            a.fernet_key()
+            print("\n🔑 Généreration d'une clé Fernet pour le TOTP")
+            a.fernet_key("totp.env")
             print("Enter pour continuer...")
             input()
         elif choice[0] == "D" and choice[1] == "2":
-            print("\n🔑 Génération d’une paire de clés RSA...\n")
+            print("\n🔑 Généreration d'une clé Fernet pour les votes confidentiels")
+            a.fernet_key("vote.env")
             print("Enter pour continuer...")
             input()
         elif choice[0] == "D" and choice[1] == "3":
-            print("\n🤳 Simulation d’un challenge TOTP + Tap...\n")
+            print("\n🔑 Généreration d'une clé Fernet pour les réponses confidentiels")
+            a.fernet_key("answer.env")
             print("Enter pour continuer...")
             input()
         #Section E - Maintenance & Logs
@@ -157,7 +160,7 @@ def main():
             print("Enter pour continuer...")
             input()
         elif choice[0] == "E" and choice[1] == "2":
-            print("\n 📊  Export des logs vers le SIEM...\n")
+            print("\n📊  Export des logs vers le SIEM...\n")
             print("Enter pour continuer...")
             input()
         elif choice[0] == "E" and choice[1] == "3":

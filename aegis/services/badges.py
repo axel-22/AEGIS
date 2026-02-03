@@ -18,16 +18,12 @@ from aegis.services.nfc_reader import NFCReader
 
 db.set_debug(True)
 
-dotenv_path = os.path.join(os.path.dirname(__file__), '..', 'secrets', 'secrets.env')
+dotenv_path = os.path.join(os.path.dirname(__file__), '..', 'secrets', 'totp.env')
 load_dotenv(dotenv_path)
 
 def generate_totp_secret() -> str:
     secret = pyotp.random_base32()
     return secret
-
-def encrypt_totp_secret(secret_text: str, fernet: Fernet) -> str:
-    encrypted_bytes = fernet.encrypt(secret_text.encode('utf-8'))
-    return encrypted_bytes.decode('utf-8')
 
 def decrypt_totp_secret(token_str: str, fernet: Fernet) -> str:
     decrypted_bytes = fernet.decrypt(token_str.encode('utf-8'))
@@ -36,8 +32,6 @@ def decrypt_totp_secret(token_str: str, fernet: Fernet) -> str:
 def attach_badge_to_user(badge_id: int, user_id: int):
     db.assign_badge_to_user(badge_id, user_id)
 
-def generate_fernet_key() -> str:
-    return Fernet.generate_key().decode()
 
 def get_header_id_from_nfc() -> str:
     nfc_reader = NFCReader()
@@ -52,13 +46,13 @@ def create_badge(username: str, secret: str, header_id: str) -> BADGES:
     two_years_later = datetime.datetime.now().date() + datetime.timedelta(days=730)
     print(f"Issued at: {today}, Expires at: {two_years_later}")
     totp = pyotp.TOTP(secret)
-    fernet_key = os.getenv("FERNET_KEY")
+    fernet_totp_key = os.getenv("FERNET_TOTP_KEY")
 
     if not fernet_key:
-        raise ValueError("FERNET_KEY non défini dans .env")
+        raise ValueError("FERNET_TOTP_KEY non défini dans totp.env")
 
-    fernet = Fernet(fernet_key)
-    encrypted_secret = encrypt_totp_secret(secret, fernet)
+    fernet = Fernet(fernet_totp_key)
+    encrypted_secret = utils.encrypt_secret(secret, fernet)
     header_hash = sha256(header_id.encode('utf-8')).hexdigest() 
 
     try:

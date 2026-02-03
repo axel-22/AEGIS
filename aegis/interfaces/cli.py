@@ -4,8 +4,11 @@
 
 import os
 from pathlib import Path
+from datetime import datetime
+from datetime import date
+import re
 
-from aegis.services import users, badges
+from aegis.services import users, badges, votes, utils
 
 def create_user():
     """Interface CLI pour créer un nouvel utilisateur."""
@@ -227,15 +230,108 @@ def edit_badge():
         print(f"Erreur de validation : {e}")
     except Exception as e:
         print(f"Erreur lors de la mise à jour : {e}")
-        
 
-def fernet_key():
-    """Interface CLI pour générer une clé Fernet et sauvegarder dans secrets.env"""
+
+def create_vote():
+    import re
+    from datetime import date
+    
+    while True:
+        question = input("➡️ Question du vote : ").strip()
+        description = input("➡️ Description (optionnel) : ").strip() or None
+        vote_type = input("➡️ Type de vote (majorité / unanimité / minimum_requis) : ").strip()
+        vote_mode = input("➡️ Mode de vote (auditable / confidentiel) : ").strip()
+        k_required = None
+        boolean = input("➡️ Est-ce que le vote est une question fermée ? (oui/non) : ").strip().lower() 
+        is_boolean = boolean in ('oui', 'o', 'yes', 'y')
+    
+        if vote_type == "minimum_requis":
+            try:
+                k_required = int(input("➡️ k requis : "))
+            except ValueError:
+                print("⚠️ k requis doit être un nombre entier.")
+                continue
+    
+        date_entry = ""
+        regex = re.compile(r'^[0-9]{2}/[0-9]{2}/[0-9]{4}$')
+        while not re.findall(regex, date_entry):
+            date_entry = input("➡️ Enter une date d'expiration au format JJ/MM/AAAA (ex 27/04/2020): ").strip()
+        day, month, year = map(int, date_entry.split('/'))
+        try:
+            expiration_date = date(year, month, day)
+        except ValueError:
+            print("⚠️ Date invalide. Veuillez recommencer.")
+            continue
+    
+        vote_data = {
+            "question": question,
+            "description_text": description,
+            "is_boolean": is_boolean,
+            "creator_user_id": None,
+            "vote_type": vote_type,
+            "vote_mode": vote_mode,
+            "is_active": True,
+            "k_required": k_required,
+            "expiration_date": expiration_date,
+            "vote_status": "open"
+        }
+    
+        try:
+            vote = votes.create_vote(vote_data)
+        except ValueError as e:
+            print(f"Erreur de validation lors de la création du vote : {e}")
+            print("Veuillez corriger les erreurs et recommencer.\n")
+            continue  # redemande toute la saisie
+        except Exception as e:
+            print(f"Erreur inattendue lors de la création du vote : {e}")
+            print("Veuillez réessayer.\n")
+            continue
+    
+        # Si on arrive ici, la création a réussi
+        break
+    
+    print("\n✅ Vote créé avec succès")
+    print(f"🆔 Vote ID : {vote.vote_id}")
+    
+    if is_boolean:
+        anwsers = []
+        while True:
+            answer_text = input("➡️ Entrez une option de réponse (ou tapez 'fin' pour terminer) : ").strip()
+            if answer_text.lower() == 'fin':
+                break
+            anwsers.append(answer_text)
+            print(f"✅ Option de réponse '{answer_text}' ajoutée.")
+        print("📝 Options de réponse ajoutées :")
+        for a in anwsers:
+            print(f" - {a}")
+        try:
+            votes.add_answers_to_vote(vote.vote_id, anwsers)
+            print("✅ Réponses enregistrées avec succès.")
+        except ValueError as e:
+            print(f"Erreur de validation lors de l'enregistrement des réponses : {e}")
+        except Exception as e:
+            print(f"Erreur lors de l'enregistrement des réponses : {e}") 
+    affecte_vote(vote.vote_id)
+    print("✅ Vote affecté aux utilisateurs avec droit de vote.")   
+
+# def affecte_vote(vote_id: int):
+#     """Affecte le vote à tous les utilisateurs ayant le droit de vote."""
+#     try:
+#         users_with_vote_right = users.get_users_who_can_vote()
+#         for user in users_with_vote_right:
+#             votes.assign_vote_to_user(vote_id, user.user_id)
+#         print(f"✅ Vote ID {vote_id} affecté à {len(users_with_vote_right)} utilisateurs.")
+#     except Exception as e:
+#         print(f"Erreur lors de l'affectation du vote aux utilisateurs : {e}")
+
+def fernet_key(the_file: str):
+    """Interface CLI pour générer une clé Fernet pour les TOTP, les VOTES et les ANSWERS."""
     secrets_dir = Path("aegis/secrets")
-    secrets_file = secrets_dir / "secrets.env"
+    secrets_file = secrets_dir / the_file
 
-    print("🔑 Génération d'une clé Fernet")
-    key = badges.generate_fernet_key()
+    print("🔑 Génération de la clé fernet")
+    key = utils.generate_fernet_key()
+    
 
     # Crée le dossier secrets s'il n'existe pas
     secrets_dir.mkdir(parents=True, exist_ok=True)
@@ -243,7 +339,13 @@ def fernet_key():
     # Si le fichier existe déjà, avertir l'utilisateur avant d'écraser
     if secrets_file.exists():
         print(f"⚠️ Le fichier {secrets_file} existe déjà.")
-        print("⚠️ Si vous vous l'écrasez, vous ne pourrez plus badger avec les utilisateurs actuels.")
+        if the_file == "totp.env":
+            print("⚠️ Si vous vous l'écrasez, vous ne pourrez plus badger avec les utilisateurs actuels.")
+        elif the_file == "vote.env":
+            print("⚠️ Vous ne pourrez plus égaller dépouiller les votes confidentiels existants.")
+        elif the_file == "answer.env":
+            print("⚠️ Vous ne pourrez plus déchiffrer les réponses confidentielles existantes.")
+
         confirm = input("Voulez-vous écraser la clé existante ? (oui/non) : ").strip().lower()
         if confirm not in ('oui', 'o', 'yes', 'y'):
             print("Abandon de la génération de la clé.")
@@ -251,12 +353,16 @@ def fernet_key():
 
     # Écriture de la clé dans le fichier au format .env
     with secrets_file.open("w", encoding="utf-8") as f:
-        f.write(f"FERNET_KEY={key}\n")
+        if the_file == "totp.env":
+            string = "# AEGIS - NowBlackout ENSIBS 2025\n# File: AEGIS/aegis/secrets/totp.env\n# ENV - Store secret key for badge encryption\n\n# CHANGE DEFAULT KEY BEFOR DEPLOYMENT\nFERNET_TOTP_KEY="
+        elif the_file == "vote.env":
+            string = "# AEGIS - NowBlackout ENSIBS 2025\n# File: AEGIS/aegis/secrets/vote.env\n# ENV - Store secret key for user vote choice encryption in confidental mode\n\n# CHANGE DEFAULT KEY BEFOR DEPLOYMENT\nFERNET_VOTE_KEY="
+        elif the_file == "answer.env":
+            string = "# AEGIS - NowBlackout ENSIBS 2025\n# File: AEGIS/aegis/secrets/answer.env\n# ENV - Store secret key for user answer encryption in confidental mode\n\n# CHANGE DEFAULT KEY BEFOR DEPLOYMENT\nFERNET_ANSWER_KEY="
+        f.write(string+key+"\n")
 
-    print(f"➡️  Clé Fernet générée et sauvegardée dans {secrets_file}")
+    print(f"➡️  Clé Fernet générée et sauvegardée dans {secrets_file}.")
     print("⚠️ Veuillez sauvegarder cette clé en lieu sûr. Elle est nécessaire pour le chiffrement et le déchiffrement des données.")
-    print("👉 Pensez à modifier la clé si vous réutilisez un ancien fichier secrets.env.")
-
 
 if __name__ == "__main__":
     #ac_setup()
