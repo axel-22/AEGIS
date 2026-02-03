@@ -100,18 +100,22 @@ def main():
         #Section B - Badges
         elif choice[0] == "B" and choice[1] == "1":
             print("\n🪪 Liste de tous les badges...\n")
-            print("Enter pour continuer...")
-            input()
-        elif choice[0] == "B" and choice[1] == "1":
-            print("\n✅ Liste des badges actifs...\n")
+            a.list_all_badges()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "B" and choice[1] == "2":
-            print("\n⌛ Liste des badges expirés...\n")
+            print("\n✅ Liste des badges actifs...\n")
+            a.list_badges(False)
             print("Enter pour continuer...")
             input()
         elif choice[0] == "B" and choice[1] == "3":
+            print("\n⌛ Liste des badges expirés...\n")
+            a.list_badges(True)
+            print("Enter pour continuer...")
+            input()
+        elif choice[0] == "B" and choice[1] == "4":
             print("\n🚫 Révocation d’un badge compromis...\n")
+            a.edit_badge()
             print("Enter pour continuer...")
             input()
 

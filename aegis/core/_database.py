@@ -9,6 +9,7 @@ from datetime import datetime
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import joinedload
+from sqlalchemy import or_, and_
 
 from aegis.core._models import Base, USERS, BADGES, SECRETS, ENVELOPES
 
@@ -132,6 +133,99 @@ def select_user_by_username(username: str) -> 'USERS':
     finally:
         session.close()
 
+def select_user_by_id(user_id: int) -> 'USERS':
+    """Récupérer un utilisateur par son ID."""
+    session = get_session()
+    try:
+        user = session.query(USERS).filter(USERS.user_id == user_id).first()
+        return user
+    except Exception as e:
+        raise e
+    finally:
+        session.close()
+
+def drop_user(user_id: int):
+    session = get_session()
+    try:
+        user = session.get(USERS, user_id)
+        if user:
+            session.delete(user)
+            session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+def select_all_badges() -> list[tuple[BADGES, str]]:
+    session = get_session()
+    try:
+        results = (
+            session
+            .query(BADGES, USERS.username)
+            .join(USERS, BADGES.the_user == USERS.user_id)
+            .all()
+        )
+        return results
+
+    except Exception as e:
+        session.rollback()
+        raise e
+
+def select_badge_by_id(badge_id: int) -> 'BADGES':
+    session = get_session()
+    try:
+        badge = session.get(BADGES, badge_id)
+        return badge
+    except Exception as e:
+        raise e
+    finally:
+        session.close()
+
+def select_badges_by_revocation_status(is_revoked: bool) -> list[tuple[BADGES, str]]:
+    session = get_session()
+    now = datetime.utcnow()
+    try:
+        if is_revoked:
+            # Badges révoqués OU expirés
+            results = (
+                session
+                .query(BADGES, USERS.username)
+                .join(USERS, BADGES.the_user == USERS.user_id)
+                .filter(
+                    or_(
+                        BADGES.is_revoked.is_(True),
+                        and_(
+                            BADGES.expires_at.isnot(None),
+                            BADGES.expires_at <= now
+                        )
+                    )
+                )
+                .all()
+            )
+        else:
+            # Badges actifs
+            results = (
+                session
+                .query(BADGES, USERS.username)
+                .join(USERS, BADGES.the_user == USERS.user_id)
+                .filter(
+                    and_(
+                        BADGES.is_revoked.is_(False),
+                        or_(
+                            BADGES.expires_at.is_(None),
+                            BADGES.expires_at > now
+                        )
+                    )
+                )
+                .all()
+            )
+        return results
+
+    except Exception as e:
+        session.rollback()
+        raise e
+
 def select_user_with_badge_by_user_id(user_id: int, session=None) -> 'USERS':
     close_session = False
     if session is None:
@@ -143,6 +237,21 @@ def select_user_with_badge_by_user_id(user_id: int, session=None) -> 'USERS':
     finally:
         if close_session:
             session.close()
+def update_user(user_id: int, user_data: dict) -> 'USERS':
+    """Éditer un utilisateur existant."""
+    session = get_session()
+    try:
+        user = session.get(USERS, user_id)
+        for key, value in user_data.items():
+            setattr(user, key, value)
+        session.commit()
+        session.refresh(user)
+        return user
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
 
 def delete_secrets(user_id: int):
     session = get_session()
@@ -173,7 +282,7 @@ def insert_badge(badge: 'BADGES') -> 'BADGES':
     finally:
         session.close()
 
-def assign_badge_to_user(badge_id, user_id):
+def assign_badge_to_user(badge_id: int, user_id: int):
     session = get_session()
     try:
         badge = session.get(BADGES, badge_id)
@@ -185,18 +294,12 @@ def assign_badge_to_user(badge_id, user_id):
     finally:
         session.close()
 
-def update_user(user_id: int, user_data: dict) -> 'USERS':
-    """Éditer un utilisateur existant."""
+def select_badge_by_header_id(header_hash: str) -> 'BADGES':
     session = get_session()
     try:
-        user = session.get(USERS, user_id)
-        for key, value in user_data.items():
-            setattr(user, key, value)
-        session.commit()
-        session.refresh(user)
-        return user
+        badge = session.query(BADGES).filter(BADGES.header_id == header_hash).first()
+        return badge
     except Exception as e:
-        session.rollback()
         raise e
     finally:
         session.close()

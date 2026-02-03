@@ -9,37 +9,43 @@ from aegis.services import users, badges
 
 def create_user():
     """Interface CLI pour créer un nouvel utilisateur."""
-    name = input("➡️  Prénom : ").strip().lower()
-    nom = input("➡️  Nom de famille : ").strip().lower()
-    username = input("➡️  Nom d'utilisateur : ").strip().lower()
-    email = input("➡️  Email : ").strip().lower()
-    metier = input("➡️  Métier (par défaut) développeur: ").strip().lower()
-    role = input("➡️  Rôle : (par défaut) membre : ").strip().lower()
+    print("\n👤 Création d’un nouvel utilisateur...\n")
+    user = None
+    user_data = {}
+    while True:
+        name = input("➡️  Prénom : ").strip().lower()
+        nom = input("➡️  Nom de famille : ").strip().lower()
+        username = input("➡️  Nom d'utilisateur : ").strip().lower()
+        email = input("➡️  Email : ").strip().lower()
+        metier = input("➡️  Métier (par défaut) développeur: ").strip().lower()
+        role = input("➡️  Rôle : (par défaut) membre : ").strip().lower()
 
-    user_data = {
-        "first_name": name,
-        "last_name": nom,
-        "username": username,
-        "email": email,
-        "job": metier if metier else "développeur",
-        "the_role": role if role else "membre"
-    }
-  
-    try:
-        user = users.create_user(user_data)
-        #print(f"Utilisateur créé avec l'ID {user.user_id}")
-        print("✅"+"═" * 25 +f"Utilisateur '{user.username}' créé avec succès !\n"+"═" * 25)
-        print("🪪 Récapitulation des informations ajoutées")
-        print(f"  - Prénom : {user.first_name}")
-        print(f"  - Nom de famille : {user.last_name}")
-        print(f"  - Nom d'utilisateur : {user.username}")
-        print(f"  - Email : {user.email}")
-        print(f"  - Métier : {user.job}")
-        print(f"  - Rôle : {user.the_role}\n")
-    except ValueError as e:
-        print(f"Erreur de validation : {e}")
-    except Exception as e:
-        print(f"Erreur lors de la création : {e}")
+        user_data = {
+            "first_name": name,
+            "last_name": nom,
+            "username": username,
+            "email": email,
+            "job": metier if metier else "développeur",
+            "the_role": role if role else "membre"
+        }
+    
+        try:
+            user = users.create_user(user_data)
+            #print(f"Utilisateur créé avec l'ID {user.user_id}")
+            print("✅"+"═" * 25 +f"Utilisateur '{user.username}' créé avec succès !\n"+"═" * 25)
+            print("🪪 Récapitulation des informations ajoutées")
+            print(f"  - Prénom : {user.first_name}")
+            print(f"  - Nom de famille : {user.last_name}")
+            print(f"  - Nom d'utilisateur : {user.username}")
+            print(f"  - Email : {user.email}")
+            print(f"  - Métier : {user.job}")
+            print(f"  - Rôle : {user.the_role}\n")
+            break
+        except ValueError as e:
+            print(f"Erreur de validation : {e}")
+        except Exception as e:
+            print(f"Erreur lors de la création : {e}")
+            break
 
     try:
         new_user = users.get_user_by_username(user_data.get("username"))
@@ -157,6 +163,70 @@ def remove_user():
     except Exception as e:
         print(f"Erreur lors de la suppression de l'utilisateur : {e}")
 
+def list_all_badges():
+    """Interface CLI pour lister tous les badges."""
+    allbadges = badges.list_all_badges()
+    print(f"\n📋 Liste de tous les badges:\n")
+    print("  - Badge ID, Username, Hash, Issued At, Expires At, Is Revoked, Reason, Updated At")
+    for badge, username in allbadges:
+        print(f"    - {badge.badge_id}, {username}, {badge.header_id}, {badge.issued_at}, {badge.expires_at}, {badge.is_revoked}, {badge.revoked_reason}, {badge.updated_at}")
+
+    print("\n🪪"+"═" * 30 +f" Total: {len(allbadges)} badges dans la base "+"═" * 30)
+
+def list_badges(is_revoked: bool):
+    """Interface CLI pour lister les badges."""
+    allbadges = badges.list_badges(is_revoked)
+    status = "révoqués" if is_revoked else "actifs"
+    emoji = "🚫" if is_revoked else "✅"
+    print(f"\n {emoji} Liste des badges {status} :\n")
+    print("  - Badge ID, Username, Hash, Issued At, Expires At, Is Revoked, Reason, Updated At")
+    for badge, username in allbadges:
+        print(f"    - {badge.badge_id}, {username}, {badge.header_id}, {badge.issued_at}, {badge.expires_at}, {badge.is_revoked}, {badge.revoked_reason}, {badge.updated_at}")
+
+    print("\n🪪"+"═" * 30 +f" Total: {len(allbadges)} badges {status} dans la base "+"═" * 30)
+
+def edit_badge():
+    """Interface CLI pour éditer un badge."""
+    list_all_badges()
+    badge_id_input = input("➡️  Entrez l'ID du badge à éditer : ").strip()
+    badge_id = None
+    while badge_id is None:
+        try:
+            badge_id = int(badge_id_input)
+        except ValueError:
+            print("❌ ID de badge invalide.")
+            return
+    try:
+        badge = badges.get_badge_by_id(badge_id)
+        if not badge:
+            print(f"❌ Badge avec l'ID '{badge_id}' non trouvé.")
+            return
+    except Exception as e:
+        print(f"Erreur lors de la récupération du badge : {e}")
+        return
+
+    print(f"\n✏️  Édition du badge ID '{badge_id}'. Laissez vide pour conserver la valeur actuelle.\n")
+    new_expires_at = input(f"➡️  Date d'expiration ({badge.expires_at}) [format YYYY-MM-DD] : ").strip()
+    new_is_revoked = input(f"➡️  Est révoqué ({badge.is_revoked}) [oui/non] : ").strip().lower()
+    new_revoked_reason = input(f"➡️  Raison de révocation ({badge.revoked_reason}) : ").strip()
+
+    badge_data = {}
+    if new_expires_at:
+        badge_data["expires_at"] = new_expires_at
+    if new_is_revoked in ('oui', 'o', 'yes', 'y'):
+        badge_data["is_revoked"] = True
+    elif new_is_revoked in ('non', 'n', 'no'):
+        badge_data["is_revoked"] = False
+    if new_revoked_reason:
+        badge_data["revoked_reason"] = new_revoked_reason
+
+    try:
+        updated_badge = badges.edit_badge(badge.badge_id, badge_data)
+        print(f"✅ Badge ID '{updated_badge.badge_id}' mis à jour avec succès !")
+    except ValueError as e:
+        print(f"Erreur de validation : {e}")
+    except Exception as e:
+        print(f"Erreur lors de la mise à jour : {e}")
         
 
 def fernet_key():

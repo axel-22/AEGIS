@@ -8,14 +8,25 @@ from datetime import datetime
 import aegis.core._database as db
 from aegis.core._models import USERS, BADGES, SECRETS, ENVELOPES
 
-MAX_LEN_USERNAME = 50
+MAX_LEN = 50
 
 db.set_debug(False)
 
-def is_valid_email(email: str, username: str) -> bool:
+def is_valid_email(email: str) -> bool:
     """Vérifie si l'email est dans un format valide."""
     pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
-    if(re.match(pattern, email) and len(username) <= MAX_LEN_USERNAME):
+    if(re.match(pattern, email) and len(email) <= MAX_LEN):
+        return True
+    return False
+
+def is_valid_username(username: str) -> bool:
+    """
+    Vérifie si le nom d'utilisateur est valide :
+    - Contient uniquement lettres (accentuées), chiffres, underscores et points
+    - Pas d'espaces ou autres caractères spéciaux
+    """
+    pattern = r"^[A-Za-z0-9_.À-ÖØ-öø-ÿ]+$"
+    if(re.match(pattern, username) and len(username) <= MAX_LEN):
         return True
     return False
 
@@ -26,7 +37,7 @@ def is_valid_name(name: str) -> bool:
     - Pas d'espaces, chiffres ou autres caractères spéciaux
     """
     pattern = r"^[A-Za-zÀ-ÖØ-öø-ÿ'’-]+$"
-    if(re.match(pattern, name) and len(name) <= MAX_LEN_USERNAME):
+    if(re.match(pattern, name) and len(name) <= MAX_LEN):
         return True
     return False
         
@@ -43,13 +54,16 @@ def create_user(user_data: dict) -> 'USERS':
     
     email = user_data.get("email")
     username = user_data.get("username")
-    if email and not is_valid_email(email, username):
+    if email and not is_valid_email(email):
         raise ValueError("Format d'email invalide.")
 
     the_username = db.select_user_by_username(user_data.get("username"))
     if the_username:
         raise ValueError("Nom d'utilisateur déjà existant. Veuillez en choisir un autre.")
 
+    if verify_username := is_valid_username(username) == False:
+        raise ValueError("Nom d'utilisateur invalide. Utilisez uniquement des lettres, chiffres, underscores et points.")   
+    
     new_user = USERS(
             first_name=user_data["first_name"],
             last_name=user_data["last_name"],
@@ -84,6 +98,14 @@ def get_user_by_username(username: str) -> 'USERS':
     """Récupérer un utilisateur par son nom d'utilisateur."""
     try:
         user = db.select_user_by_username(username)
+    except Exception as e:
+        raise e
+    return user
+
+def get_user_by_id(user_id: int) -> 'USERS':
+    """Récupérer un utilisateur par son ID."""
+    try:
+        user = db.select_user_by_id(user_id)
     except Exception as e:
         raise e
     return user

@@ -41,6 +41,7 @@ class BADGES(Base):
     revoked_reason: Mapped[str] = mapped_column(String(50))
     badge_id: Mapped[Optional[int]] = mapped_column(Integer, primary_key=True)
     the_user: Mapped[Optional[int]] = mapped_column(ForeignKey('USERS.user_id'), unique=True)
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
     revoked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
     USERS_: Mapped[Optional['USERS']] = relationship('USERS', back_populates='BADGES')
     SHARES: Mapped[list['SHARES']] = relationship('SHARES', back_populates='BADGES_')

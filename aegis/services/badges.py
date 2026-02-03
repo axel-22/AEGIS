@@ -2,15 +2,17 @@
 # Last modified: 2025-15-11
 # Badges Service - Manage all badge-related operations
 
-import base64,  os, secrets, hashlib, sys, json, datetime, os
+import base64, os, secrets, hashlib, sys, json, os
 from pathlib import Path
+from datetime import datetime
 from dotenv import load_dotenv
 
 import pyotp
 from cryptography.fernet import Fernet
+from hashlib import sha256
 
 import aegis.core._database as db
-from aegis.core._models import BADGES 
+from aegis.core._models import BADGES, USERS
 
 from aegis.services.nfc_reader import NFCReader
 
@@ -57,10 +59,19 @@ def create_badge(username: str, secret: str, header_id: str) -> BADGES:
 
     fernet = Fernet(fernet_key)
     encrypted_secret = encrypt_totp_secret(secret, fernet)
-    
+    header_hash = sha256(header_id.encode('utf-8')).hexdigest() 
+
+    try:
+        existing_badge = db.select_badge_by_header_id(header_hash)
+        if existing_badge:
+            raise ValueError("Ce badge NFC est déjà enregistré dans le système.")
+    except Exception as e:
+        raise e
+        return
+
     b = BADGES(
         the_user=None,
-        header_id=header_id,
+        header_id=header_hash,
         issued_at=today,
         expires_at=two_years_later,
         is_revoked=False,
@@ -72,6 +83,63 @@ def create_badge(username: str, secret: str, header_id: str) -> BADGES:
     badge = db.insert_badge(b)
 
     return badge
+
+def is_badge_allready_assigned(header_id: str) -> bool:
+    header_hash = sha256(header_id.encode('utf-8')).hexdigest()
+    badge = db.select_badge_by_header_id(header_hash)
+    if badge and badge.the_user is not None:
+        u = users.get_user_by_id(badge.the_user)
+        db.drop_user(u.user_id)
+        return True
+    return False
+
+def list_all_badges() -> list[tuple[BADGES, str]]:
+    try:
+        badges = db.select_all_badges()
+    except Exception as e:
+        raise e
+    return badges
+
+def get_badge_by_id(badge_id: int) -> BADGES:
+    try:
+        badge = db.select_badge_by_id(badge_id)
+    except Exception as e:
+        raise e
+    return badge
+
+def edit_badge(badge_id: int, badge_data: dict) -> BADGES:
+    session = db.get_session()
+
+    try:
+        badge = session.query(BADGES).filter(BADGES.badge_id == badge_id).first()
+
+        if not badge:
+            raise ValueError(f"Badge {badge_id} non trouvé")
+
+        # Mise à jour des champs autorisés
+        for field, value in badge_data.items():
+            if hasattr(badge, field):
+                setattr(badge, field, value)
+
+        badge.updated_at = datetime.utcnow()
+
+        session.commit()
+        session.refresh(badge)
+        return badge
+
+    except Exception as e:
+        session.rollback()
+        raise Exception(f"Erreur lors de la modification du badge : {e}")
+
+    finally:
+        session.close()
+
+def list_badges(is_revoked: bool) -> list[tuple[BADGES, str]]:
+    try:
+        badges = db.select_badges_by_revocation_status(is_revoked)
+    except Exception as e:
+        raise e
+    return badges
 
 if __name__ == "__main__":
     print("Création d'un badge de test pour l'utilisateur 'testuser'")
