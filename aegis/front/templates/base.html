@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AEGIS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: #f8f9fa;
+            color: #333;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        /* SIDEBAR FIXE GAUCHE */
+        .sidebar {
+            width: 320px;
+            height: 100vh;
+            background: linear-gradient(180deg, #0f3460 0%, #16213e 100%);
+            flex-shrink: 0;
+            overflow-y: auto;
+            box-shadow: 3px 0 20px rgba(0,0,0,0.2);
+        }
+        
+        .sidebar-header {
+            padding: 40px 30px;
+            border-bottom: 3px solid rgba(255,255,255,0.1);
+            text-align: center;
+        }
+        .sidebar h1 { 
+            color: white; 
+            font-size: 32px; 
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+        .sidebar p { color: #b8c1d4; font-size: 18px; }
+        
+        .nav-menu {
+            list-style: none;
+            padding: 30px 0;
+        }
+        .nav-item { margin: 0; }
+        .nav-link {
+            display: block;
+            padding: 30px 35px;
+            color: #e0e6f0;
+            text-decoration: none;
+            font-size: 22px;
+            font-weight: 600;
+            border-left: 6px solid transparent;
+            transition: all 0.2s ease;
+            position: relative;
+            touch-action: manipulation;
+        }
+        .nav-link:hover {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border-left-color: #e94560;
+            transform: translateX(8px);
+        }
+        .nav-link.active {
+            background: rgba(233,69,96,0.3);
+            color: white;
+            border-left-color: #e94560;
+        }
+        
+        /* CONTENU PRINCIPAL */
+        .main-content {
+            flex: 1;
+            padding: 50px;
+            overflow-y: auto;
+            background: #f8f9fa;
+        }
+        
+        .container { max-width: 100%; margin: 0; }
+        
+        /* BOUTONS TACTILE XXL */
+        button.primary, .vote-btn {
+            background: linear-gradient(135deg, #0f3460, #16213e);
+            color: white !important;
+            border: none;
+            padding: 30px 60px;
+            font-size: 24px;
+            font-weight: 700;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 10px 40px rgba(15,52,96,0.4);
+            touch-action: manipulation;
+            min-height: 100px;
+            width: 100%;
+            margin: 20px 0;
+        }
+        button.primary:hover, .vote-btn:hover { 
+            transform: translateY(-5px); 
+            box-shadow: 0 15px 50px rgba(15,52,96,0.5); 
+        }
+        
+        .vote-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin: 50px 0;
+        }
+        .vote-btn {
+            height: 200px;
+            font-size: 26px;
+            background: linear-gradient(135deg, #533483, #7b68ee);
+            box-shadow: 0 12px 50px rgba(83,52,131,0.4);
+        }
+        
+        .nfc-login {
+            background: white;
+            padding: 80px;
+            border-radius: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            text-align: center;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        .badge-detected {
+            background: linear-gradient(135deg, #d4edda, #c3e6cb);
+            border: 4px solid #28a745;
+            padding: 40px;
+            border-radius: 25px;
+            margin: 40px 0;
+            font-size: 26px;
+            font-weight: 700;
+        }
+        
+        input {
+            width: 100%;
+            padding: 30px;
+            font-size: 22px;
+            border: 3px solid #e0e6ed;
+            border-radius: 25px;
+            margin: 25px 0;
+            transition: all 0.3s ease;
+        }
+        input:focus {
+            outline: none;
+            border-color: #0f3460;
+            box-shadow: 0 0 0 5px rgba(15,52,96,0.15);
+        }
+        
+        .flash { 
+            background: #fff3cd; 
+            border: 3px solid #ffeaa7; 
+            color: #856404; 
+            padding: 30px; 
+            margin: 30px 0; 
+            border-radius: 25px; 
+            font-size: 20px;
+        }
+        
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 40px 0; 
+            background: white;
+            border-radius: 25px;
+            overflow: hidden;
+            box-shadow: 0 15px 50px rgba(0,0,0,0.1);
+        }
+        th, td { 
+            padding: 30px; 
+            text-align: left; 
+            border-bottom: 2px solid #f0f0f0; 
+            font-size: 20px; 
+        }
+        th { 
+            background: #0f3460; 
+            color: white; 
+            font-weight: 700; 
+            font-size: 22px; 
+        }
+        
+        h1 { font-size: 42px; color: #0f3460; margin-bottom: 30px; }
+        h2 { font-size: 32px; color: #0f3460; margin: 40px 0 25px 0; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 40px;
+            margin: 50px 0;
+        }
+        .stat-card {
+            background: white;
+            padding: 60px;
+            border-radius: 30px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            border-top: 6px solid #0f3460;
+        }
+        .stat-number { 
+            font-size: 60px; 
+            font-weight: 800; 
+            color: #0f3460; 
+            margin: 25px 0; 
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar { width: 100%; order: 2; }
+            body { flex-direction: column; }
+            .main-content { padding: 30px 20px; order: 1; }
+            .vote-btn { height: 160px; font-size: 22px; }
+        }
+    </style>
+</head>
+<body>
+    <!-- SIDEBAR FIXE TOUJOURS VISIBLE -->
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h1>🛡️ AEGIS</h1>
+            <p>Système de Vote Sécurisé</p>
+        </div>
+        
+        <ul class="nav-menu">
+            <!-- MENU BASE TOUS USERS -->
+            <li class="nav-item">
+                <a href="/" class="nav-link {{ 'active' if request.endpoint in ['index'] }}">📊 Vote</a>
+            </li>
+            <li class="nav-item">
+                <a href="/connexion" class="nav-link {{ 'active' if request.endpoint == 'connexion' }}">🔐 Connexion</a>
+            </li>
+            
+            <!-- MENU ADMIN UNIQUEMENT -->
+            {% if session.get('is_admin') == 1 %}
+            <li class="nav-item">
+                <a href="/administration" class="nav-link {{ 'active' if request.endpoint == 'administration' }}">⚙️ Administration</a>
+            </li>
+            <li class="nav-item">
+                <a href="/statistiques" class="nav-link {{ 'active' if request.endpoint == 'statistiques' }}">📈 Statistiques</a>
+            </li>
+            {% endif %}
+            
+            <!-- USER CONNECTÉ -->
+            {% if session.badge_nom %}
+            <li class="nav-item" style="margin-top: 20px;">
+                <a href="/deconnexion" class="nav-link" style="background: rgba(233,69,96,0.3); font-size: 20px;">
+                    🚪 {{ session.badge_nom }}<br><small>(Déconnexion)</small>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    
+    <!-- CONTENU PRINCIPAL -->
+    <div class="main-content">
+        <div class="container">
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="flash">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+</body>
+</html>

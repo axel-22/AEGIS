@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>⚙️ Administration</h1>
+
+<h2>Nouveau Scrutin</h2>
+<form method="POST">
+    <input name="titre" placeholder="Titre scrutin" required>
+    <input name="question" placeholder="Question ?" required>
+    <input name="options" placeholder="Oui,Non,Abstention" required>
+    <input name="quorum" type="number" placeholder="Quorum (0)" value="0">
+    <button type="submit" class="primary">Créer Scrutin</button>
+    <button type="submit" name="logout" value="1" class="primary" style="background: #e94560;">Déconnexion</button>
+</form>
+
+<h2>Scrutins Récents</h2>
+<table>
+    <tr><th>ID</th><th>Titre</th><th>Question</th><th>Actif</th></tr>
+    {% for s in scrutins %}
+    <tr><td>{{s[0]}}</td><td>{{s[1]}}</td><td>{{s[2][:30]}}...</td><td>{{'✅' if s[6] else '❌'}}</td></tr>
+    {% endfor %}
+</table>
+{% endblock %}

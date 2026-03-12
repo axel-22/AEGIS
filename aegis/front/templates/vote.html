@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="nfc-login">
+    <h2>🗳️ Vote Électronique</h2>
+    <p>Approchez votre badge NFC du lecteur</p>
+    
+    <div id="nfc-status">
+        <p style="font-size: 20px; margin: 30px 0;">🔍 En attente du badge NFC...</p>
+        <button class="primary" onclick="simulerNFC()">🧪 Simuler Badge (Test)</button>
+    </div>
+    
+    <div id="vote-section" style="display:none;">
+        <div id="badge-info" class="badge-detected"></div>
+        <h3 id="question"></h3>
+        <div id="options" class="vote-options"></div>
+    </div>
+</div>
+
+<script>
+let current_scrutin = null;
+let detected_badge = null;
+
+fetch('/scrutins_actifs')
+    .then(r=>r.json())
+    .then(data => {
+        if (data.scrutin) {
+            current_scrutin = data.scrutin;
+        } else {
+            document.getElementById('nfc-status').innerHTML = 
+                '<p style="color:orange; font-size:18px;">💡 Aucun scrutin actif - contactez l\'administrateur</p>';
+        }
+    });
+
+function simulerNFC() {
+    detected_badge = 'badge_user_' + Math.floor(Math.random()*1000);
+    showVoteSection(detected_badge);
+}
+
+function showVoteSection(badge_uid) {
+    detected_badge = badge_uid;
+    document.getElementById('nfc-status').style.display = 'none';
+    document.getElementById('vote-section').style.display = 'block';
+    
+    document.getElementById('badge-info').innerHTML = 
+        `✅ Badge détecté: <strong>${badge_uid}</strong><br>
+         <small>Vérification des droits...</small>`;
+    
+    if (current_scrutin) {
+        setTimeout(() => {
+            document.getElementById('question').textContent = current_scrutin.question;
+            document.getElementById('badge-info').innerHTML = 
+                `✅ Badge autorisé: <strong>${badge_uid}</strong>`;
+            
+            const opts = current_scrutin.options.split(',');
+            const container = document.getElementById('options');
+            container.innerHTML = '';
+            opts.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = 'vote-btn';
+                btn.textContent = opt.trim();
+                btn.onclick = () => voter(opt.trim());
+                container.appendChild(btn);
+            });
+        }, 1000);
+    }
+}
+
+function voter(choix) {
+    if (!current_scrutin || !detected_badge) return;
+    
+    fetch('/vote', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `badge_uid=${detected_badge}&scrutin_id=${current_scrutin.id}&choix=${choix}`
+    })
+    .then(r=>r.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('vote-section').innerHTML = 
+                '<h3>✅ Vote enregistré avec succès !</h3><p>Votre choix a été pris en compte de manière anonyme.</p><button class="primary" onclick="location.reload()">Nouveau vote</button>';
+        } else {
+            document.getElementById('badge-info').innerHTML = 
+                `<p style="color:#f44336;">❌ Erreur: ${data.error}</p>`;
+        }
+    });
+}
+</script>
+{% endblock %}
