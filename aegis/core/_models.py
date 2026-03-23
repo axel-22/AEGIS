@@ -45,6 +45,7 @@ class BADGES(Base):
     the_user: Mapped[Optional[int]] = mapped_column(ForeignKey('USERS.user_id'))
     revoked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
     revoked_reason: Mapped[Optional[str]] = mapped_column(String(100))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
 
     USERS_: Mapped[Optional['USERS']] = relationship('USERS', back_populates='BADGES')
     ENVELOPES: Mapped[list['ENVELOPES']] = relationship('ENVELOPES', back_populates='BADGES_')
@@ -90,7 +91,7 @@ class VOTES(Base):
     creator_user: Mapped[Optional['USERS']] = relationship('USERS', back_populates='VOTES')
     ANSWERS: Mapped[list['ANSWERS']] = relationship('ANSWERS', back_populates='VOTES_')
     ENVELOPES: Mapped[list['ENVELOPES']] = relationship('ENVELOPES', back_populates='VOTES_')
-
+    NONCES: Mapped[list['NONCES']] = relationship('NONCES', back_populates='VOTES_')
 
 class ANSWERS(Base):
     __tablename__ = 'ANSWERS'
@@ -143,7 +144,9 @@ class NONCES(Base):
     the_envelope: Mapped[Optional[int]] = mapped_column(ForeignKey('ENVELOPES.envelope_id'))
     issued_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
     the_user: Mapped[Optional[int]] = mapped_column(ForeignKey('USERS.user_id'))
+    the_vote: Mapped[Optional[int]] = mapped_column(ForeignKey('VOTES.vote_id'))
     used_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
 
     ENVELOPES_: Mapped[Optional['ENVELOPES']] = relationship('ENVELOPES', back_populates='NONCES')
+    VOTES_: Mapped[Optional['VOTES']] = relationship('VOTES', back_populates='NONCES')
     USERS_: Mapped[Optional['USERS']] = relationship('USERS', back_populates='NONCES')

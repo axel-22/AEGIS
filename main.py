@@ -6,7 +6,7 @@ import sys
 import time
 from datetime import datetime
 
-import aegis.interfaces.cli as a
+import aegis.interfaces.cli as c
 
 def print_header():
     print("\n" + "═" * 100)
@@ -36,7 +36,7 @@ def show_menu():
 
     print("🗳️  Votes - C")
     print("  1 →  📩 Créer un nouveau vote")
-    print("  2 →  👀 Voir le vote en cours")
+    print("  2 →  🔄 Editer un vote")
     print("  3 →  🧾 Lister les votes précédents")
     print("  4 →  🔗 Vérifier la chaîne d’intégrité (blockchain)\n")
 
@@ -51,6 +51,11 @@ def show_menu():
     print("  2 →  📊 Exporter les événements vers le SIEM")
     print("  3 →  💾 Sauvegarder la base de données\n")
 
+
+    print("📩  Mes Votes - F")
+    print("  1 →  🧾 Voir mes précédents votes")
+    print("  2 →  🗳️ Voter\n")
+
     print("❌  0 →  Quitter l’application\n")
 
 def main():
@@ -61,72 +66,72 @@ def main():
         
         choice = input("➡️  Votre choix : ").strip()
         
-        while not (choice == "0" or (len(choice) == 2 and choice[0] in "ABCDE" and choice[1] in "123456")):
+        while not (choice == "0" or (len(choice) == 2 and choice[0] in "ABCDEF" and choice[1] in "123456")):
             print("⚠️  Choix invalide, veuillez réessayer.")
             choice = input("➡️  Votre choix (ex A1 pour lister les utilisteurs actifs) : ").strip() 
 
         #Section A - Utilisateurs
         if choice[0] == "A" and choice[1] == "1":
             print("\n 📋Liste de tous les utilisateurs...\n")
-            a.list_all_users()
+            c.list_all_users()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "A" and choice[1] == "2":
             print("\n ✅ Liste des utilisateurs actifs...\n")
-            a.list_users(False)
+            c.list_users(False)
             print("Enter pour continuer...")
             input()
         elif choice[0] == "A" and choice[1] == "3":
             print("\n🚫 Liste des utilisateurs révoqués...\n")
-            a.list_users(True)
+            c.list_users(True)
             print("Enter pour continuer...")
             input()
         elif choice[0] == "A" and choice[1] == "4":
             print("\n👤 Ajout d’un nouvel utilisateur...\n")
-            a.create_user()
+            c.create_user()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "A" and choice[1] == "5":
             print("\n🔄 Edition d’un utilisateur...\n")
-            a.edit_user()
+            c.edit_user()
             print("Enter pour continuer...")
             input()  
         elif choice[0] == "A" and choice[1] == "6":
             print("\n🗑️ Suppression d’un utilisateur...\n")
-            a.remove_user()
+            c.remove_user()
             print("Enter pour continuer...")
             input()    
         
         #Section B - Badges
         elif choice[0] == "B" and choice[1] == "1":
             print("\n🪪 Liste de tous les badges...\n")
-            a.list_all_badges()
+            c.list_all_badges()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "B" and choice[1] == "2":
             print("\n✅ Liste des badges actifs...\n")
-            a.list_badges(False)
+            c.list_badges(False)
             print("Enter pour continuer...")
             input()
         elif choice[0] == "B" and choice[1] == "3":
             print("\n⌛ Liste des badges expirés...\n")
-            a.list_badges(True)
+            c.list_badges(True)
             print("Enter pour continuer...")
             input()
         elif choice[0] == "B" and choice[1] == "4":
             print("\n🚫 Révocation d’un badge compromis...\n")
-            a.edit_badge()
+            c.edit_badge()
             print("Enter pour continuer...")
             input()
 
         #Section C - Votes
         elif choice[0] == "C" and choice[1] == "1":
             print("\n📩 Création d’un nouveau vote...\n")
-            a.create_vote()
+            c.create_vote()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "C" and choice[1] == "2":
-            print("\n👀 Affichage du vote en cours...\n")
+            print("\n🔄 Editer un vote...\n")
             print("Enter pour continuer...")
             input()
         elif choice[0] == "C" and choice[1] == "3":
@@ -141,19 +146,20 @@ def main():
         #Section D - Sécurité & Outils
         elif choice[0] == "D" and choice[1] == "1":
             print("\n🔑 Généreration d'une clé Fernet pour le TOTP")
-            a.fernet_key("totp.env")
+            c.fernet_key("totp.env")
             print("Enter pour continuer...")
             input()
         elif choice[0] == "D" and choice[1] == "2":
             print("\n🔑 Généreration d'une clé Fernet pour les votes confidentiels")
-            a.fernet_key("vote.env")
+            c.fernet_key("vote.env")
             print("Enter pour continuer...")
             input()
         elif choice[0] == "D" and choice[1] == "3":
             print("\n🔑 Généreration d'une clé Fernet pour les réponses confidentiels")
-            a.fernet_key("answer.env")
+            c.fernet_key("answer.env")
             print("Enter pour continuer...")
             input()
+
         #Section E - Maintenance & Logs
         elif choice[0] == "E" and choice[1] == "1":
             print("\n📰 Vérification de la cohérence interne de la base...\n")
@@ -167,7 +173,15 @@ def main():
             print("\n💾 Sauvegarde complète de la base de données...\n")
             print("Enter pour continuer...")
             input()
-
+        #Section F - Mes Votes
+        elif choice[0] == "F" and choice[1] == "1":
+            print("\n🧾 Voir mes votes en cours...\n")
+            print("Enter pour continuer...")
+            input()
+        elif choice[0] == "F" and choice[1] == "2":
+            print("\n🗳️ Voter...\n")
+            print("Enter pour continuer...")
+            input()
         # Exit option    
         elif choice == "0": 
             print("\n🔐  Exit AEGIS... \n")

@@ -29,7 +29,7 @@ def create_user():
             "username": username,
             "email": email,
             "job": metier if metier else "développeur",
-            "the_role": role if role else "membre"
+            "the_role": role if role else "member"
         }
     
         try:
@@ -104,6 +104,18 @@ def list_users(is_revoked: bool):
         print(f"    - {user[0].user_id}, {user[0].username}, {user[0].first_name}, {user[0].last_name}, {user[0].email}, {user[0].job}, {user[0].the_role}, {user[1]}")
 
     print("\n👤"+"═" * 30 +f" Total: {len(allusers)} utilisateurs {status} dans la base "+"═" * 30)
+
+def list_users_with_ids(user_ids: list[int]):
+    """Interface CLI pour lister les utilisateurs avec leurs IDs."""
+    try:
+        allusers = users.list_users_with_ids(user_ids)
+    except ValueError as e:
+        print(f"Erreur de validation : {e}")
+        return
+    print(f"\n📋 Liste des utilisateurs sélectionnés :\n")
+    print("  - ID, Username, Name, Email, Job, Role")
+    for user in allusers:
+        print(f"    - {user.user_id}, {user.username}, {user.first_name}, {user.last_name}, {user.email}, {user.job}, {user.the_role}")
 
 def edit_user():
     """Interface CLI pour éditer un utilisateur."""
@@ -262,6 +274,13 @@ def create_vote():
         except ValueError:
             print("⚠️ Date invalide. Veuillez recommencer.")
             continue
+
+        if boolean == "oui":
+          is_boolean = True
+        elif boolean == "non":
+          is_boolean = False
+        else:          
+            print("⚠️ Choix invalide pour la question fermée. Veuillez répondre par oui ou non.")    
     
         vote_data = {
             "question": question,
@@ -275,25 +294,21 @@ def create_vote():
             "expiration_date": expiration_date,
             "vote_status": "open"
         }
-    
+        vote = None
         try:
             vote = votes.create_vote(vote_data)
+            print(f"🆔 Vote ID : {vote.vote_id}")
+            break
         except ValueError as e:
             print(f"Erreur de validation lors de la création du vote : {e}")
             print("Veuillez corriger les erreurs et recommencer.\n")
-            continue  # redemande toute la saisie
         except Exception as e:
             print(f"Erreur inattendue lors de la création du vote : {e}")
             print("Veuillez réessayer.\n")
-            continue
-    
-        # Si on arrive ici, la création a réussi
-        break
     
     print("\n✅ Vote créé avec succès")
-    print(f"🆔 Vote ID : {vote.vote_id}")
     
-    if is_boolean:
+    if not is_boolean:
         anwsers = []
         while True:
             answer_text = input("➡️ Entrez une option de réponse (ou tapez 'fin' pour terminer) : ").strip()
@@ -302,27 +317,62 @@ def create_vote():
             anwsers.append(answer_text)
             print(f"✅ Option de réponse '{answer_text}' ajoutée.")
         print("📝 Options de réponse ajoutées :")
-        for a in anwsers:
-            print(f" - {a}")
         try:
             votes.add_answers_to_vote(vote.vote_id, anwsers)
             print("✅ Réponses enregistrées avec succès.")
+            for a in anwsers:
+                print(f" - {a}")
         except ValueError as e:
             print(f"Erreur de validation lors de l'enregistrement des réponses : {e}")
         except Exception as e:
             print(f"Erreur lors de l'enregistrement des réponses : {e}") 
-    affecte_vote(vote.vote_id)
-    print("✅ Vote affecté aux utilisateurs avec droit de vote.")   
+    else:
+        try:
+            votes.add_answers_to_vote(vote.vote_id, "OUI")
+            votes.add_answers_to_vote(vote.vote_id, "NON")
+            print("✅ Réponses 'OUI' et 'NON' enregistrées pour ce vote.")
+        except ValueError as e:
+            print(f"Erreur de validation lors de l'enregistrement des réponses : {e}")
+        except Exception as e:
+            print(f"Erreur lors de l'enregistrement des réponses : {e}") 
+    try:
+        affecte_vote(vote.vote_id)
+        print("✅ Vote affecté aux utilisateurs avec droit de vote.")   
+    except Exception as e:
+        print(f"Erreur lors de l'affectation du vote aux utilisateurs : {e}")
 
-# def affecte_vote(vote_id: int):
-#     """Affecte le vote à tous les utilisateurs ayant le droit de vote."""
-#     try:
-#         users_with_vote_right = users.get_users_who_can_vote()
-#         for user in users_with_vote_right:
-#             votes.assign_vote_to_user(vote_id, user.user_id)
-#         print(f"✅ Vote ID {vote_id} affecté à {len(users_with_vote_right)} utilisateurs.")
-#     except Exception as e:
-#         print(f"Erreur lors de l'affectation du vote aux utilisateurs : {e}")
+def affecte_vote(vote_id: int):
+    """Affecte le vote à tous les utilisateurs ayant le droit de vote."""
+    print("➡️ Affectation du vote aux utilisateurs ayant le droit de vote...") 
+    list_all_users()
+    print("➡️  Veuillez selectionner les utilisateurs à qui affecter le vote (ex: 1,3,5 pour les ID 1, 3 et 5) ou 'all' pour tous les utilisateurs avec droit de vote")
+    print ("Taper 'fin' pour terminer la sélection")
+    is_end = False
+    user_ids = []
+    while not is_end:
+        u = input("➡️ User ID : ").strip()
+        if u.lower() == 'fin':
+            is_end = True
+        elif u.lower() == 'all':
+            user_ids.append('all')
+            is_end = True
+        else:
+            user_id = int(u)
+            user_ids.append(user_id)
+
+    if 'all' in user_ids:
+        allusers = users.list_users(False)
+        for user in allusers:
+            user_ids.append(user[0].user_id)
+    else:
+        print("➡️  Recap des utilisateurs sélectionnés pour le vote :")
+        list_users_with_ids(user_ids)
+    try:
+        for user_id in user_ids:
+            votes.assign_vote_to_user(vote_id, user_id)
+        print(f"✅ Vote ID {vote_id} affecté à {len(users_ids)} utilisateurs.")
+    except Exception as e:
+        print(f"Erreur lors de l'affectation du vote aux utilisateurs : {e}")
 
 def fernet_key(the_file: str):
     """Interface CLI pour générer une clé Fernet pour les TOTP, les VOTES et les ANSWERS."""

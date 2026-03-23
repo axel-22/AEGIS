@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
+import secrets
 import os
 
 import aegis.core._database as db
@@ -20,7 +21,7 @@ def create_vote(vote_data: dict) -> 'VOTES':
     session = db.get_session()
 
     try:
-        now = datetime.utcnow()
+        now = datetime.now().date()
         if vote_data.get("question") is None or len(vote_data.get("question")) >=500:
             session.rollback()
             raise ValueError("La question du vote doit contenir entre 1 et 500 caractères.")
@@ -37,9 +38,13 @@ def create_vote(vote_data: dict) -> 'VOTES':
             session.rollback()
             raise ValueError("Mode de vote invalide. Choisissez parmi : auditable, confidentiel.")
         
-        if vote_data.get("expiration_date") < datetime.date.today():
+        if vote_data.get("expiration_date") < now:
             session.rollback()
             raise ValueError("La date d'expiration doit être une date future.")
+
+        if vote_data.get("is_boolean") not in [True, False]:
+            session.rollback()
+            raise ValueError("La valeur de 'is_boolean' doit être True ou False, Veuillez entréer 'oui' ou 'non'.")
 
         vote = VOTES(
             question=vote_data.get("question"),
@@ -55,7 +60,10 @@ def create_vote(vote_data: dict) -> 'VOTES':
             timeout_at=vote_data.get("expiration_date"),
             closed_at=None
         )
+        session.add(vote)
         session.commit()
+        session.refresh(vote)
+
         return vote
 
     except ValueError as ve:
@@ -77,17 +85,14 @@ def add_answers_to_vote(vote_id: int, anwsers: list[str]):
         for answer_text in anwsers:
             if len(answer_text) == 0 or len(answer_text) > 500:
                 raise ValueError("Chaque réponse doit contenir entre 1 et 500 caractères.")
-            cipher = answer_text
-            if vote.vote_mode == "confidentiel":
-                fernet = Fernet(fernet_totp_key)
-                cipher = utils.encrypt_secret(answer_text, fernet)
             answer = ANSWERS(
                 the_vote=vote.vote_id,
-                answer_text=cipher
+                answer_text=answer_text
             )
             session.add(answer)
 
         session.commit()
+        
     except Exception as e:
         session.rollback()
         raise e
@@ -105,6 +110,56 @@ def list_nonces():
     finally:
         session.close()
 
+
+# =========================
+# AFFECTE VOTE TO USERS WITH RIGHT TO VOTE
+# =========================
+def assign_vote_to_user(vote_id: int, user_id: int):
+    session = db.get_session()
+    try:
+        vote = session.get(VOTES, vote_id)
+        user = session.get(USERS, user_id)
+
+        if not vote:
+            raise ValueError("Vote non trouvé.")
+        if not user:
+            raise ValueError("Utilisateur non trouvé.")
+
+        if not vote.is_active:
+            raise ValueError("Vote non actif.")
+
+        # 🔒 Vérifier que l'utilisateur n'a pas déjà un nonce pour ce vote
+        existing_nonce = session.query(NONCES).filter(
+            NONCES.the_user == user_id,
+            NONCES.the_vote == vote_id,
+            NONCES.used == False,
+        ).first()
+
+        if existing_nonce:
+            raise ValueError(f"L'utilisateur {user_id} est déjà assigné à ce vote.")
+
+        # 🔐 Génération d’un nonce sécurisé
+        nonce_value = secrets.token_urlsafe(32)
+
+        new_nonce = NONCES(
+            nonce=nonce_value,
+            used=False,
+            the_user=user_id,
+            issued_at=datetime.utcnow(),
+            the_vote=vote_id,     # 👈 IMPORTANT
+            the_envelope=None
+        )
+
+        session.add(new_nonce)
+        session.commit()
+
+        return new_nonce
+
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
 
 # =========================
 # CAST VOTE WITH NONCE

@@ -121,6 +121,18 @@ def select_all_users() -> list[tuple['USERS', int]]:
     finally:
         session.close()
 
+def select_users_with_ids(user_ids) -> list[tuple['USERS', int]]:
+    """
+    Lister les utilisateurs qui correspondent à une liste d'IDs sans leur badge
+    """  
+    session = get_session()
+    try:
+        user = session.query(USERS).filter(USERS.user_id.in_(user_ids)).all()
+        return user
+    except Exception as e:
+        raise e
+    finally:        
+        session.close()
 
 def select_user_by_username(username: str) -> 'USERS':
     """Récupérer un utilisateur par son nom d'utilisateur."""

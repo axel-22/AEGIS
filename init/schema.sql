@@ -35,7 +35,8 @@ CREATE TABLE BADGES (
     totp_secret VARCHAR(100) NOT NULL,
     is_revoked BOOLEAN NOT NULL CHECK (is_revoked IN (0, 1)),
     revoked_at DATETIME,
-    revoked_reason VARCHAR(100)
+    revoked_reason VARCHAR(100),
+    updated_at DATETIME
 );
 
 -- ========== 3. VOTES =======================
@@ -77,6 +78,7 @@ CREATE TABLE NONCES (
     issued_at DATETIME,
     used BOOLEAN NOT NULL CHECK (used IN (0, 1)),
     the_user INTEGER REFERENCES USERS(user_id),
+    the_vote INTEGER REFERENCES VOTES(vote_id),
     used_at DATETIME
 );
 

@@ -97,6 +97,17 @@ def list_all_users() -> list[tuple['USERS', int]]:
         raise e
     return users_list
 
+def list_users_with_ids(user_ids) -> list[tuple['USERS', int]]:
+    """Lister les utilisateurs avec leurs IDs."""
+    if all(isinstance(x, int) for x in user_ids):
+        try:
+            users_list = db.select_users_with_ids(user_ids)
+        except Exception as e:
+            raise e
+    else:
+        raise ValueError("La liste des IDs doit contenir uniquement des entiers.")
+    return users_list
+
 def get_user_by_username(username: str) -> 'USERS':
     """Récupérer un utilisateur par son nom d'utilisateur."""
     try:

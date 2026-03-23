@@ -4,7 +4,7 @@
 
 import base64, os, secrets, hashlib, sys, json, os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 import pyotp
@@ -12,9 +12,11 @@ from cryptography.fernet import Fernet
 from hashlib import sha256
 
 import aegis.core._database as db
-from aegis.core._models import BADGES, USERS
+import aegis.services.utils as utils
 
+from aegis.core._models import BADGES, USERS
 from aegis.services.nfc_reader import NFCReader
+
 
 db.set_debug(True)
 
@@ -42,13 +44,13 @@ def get_header_id_from_nfc() -> str:
 
 
 def create_badge(username: str, secret: str, header_id: str) -> BADGES:
-    today = datetime.datetime.now().date()
-    two_years_later = datetime.datetime.now().date() + datetime.timedelta(days=730)
+    today = datetime.now().date()
+    two_years_later = datetime.now().date() + timedelta(days=730)
     print(f"Issued at: {today}, Expires at: {two_years_later}")
     totp = pyotp.TOTP(secret)
     fernet_totp_key = os.getenv("FERNET_TOTP_KEY")
 
-    if not fernet_key:
+    if not fernet_totp_key:
         raise ValueError("FERNET_TOTP_KEY non défini dans totp.env")
 
     fernet = Fernet(fernet_totp_key)
@@ -71,7 +73,8 @@ def create_badge(username: str, secret: str, header_id: str) -> BADGES:
         is_revoked=False,
         totp_secret=encrypted_secret,
         revoked_at=None,
-        revoked_reason=""
+        revoked_reason="",
+        updated_at=None
     )
 
     badge = db.insert_badge(b)
