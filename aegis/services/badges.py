@@ -131,6 +131,55 @@ def edit_badge(badge_id: int, badge_data: dict) -> BADGES:
     finally:
         session.close()
 
+def verify_badge_and_totp(user_id: int, header_id: str, totp_code: str) -> tuple[bool, str]:
+    """
+    Authentifie un utilisateur par badge NFC + TOTP.
+    Retourne (True, "") si valide, (False, "message d'erreur") sinon.
+    """
+    session = db.get_session()
+    try:
+        badge = (
+            session.query(BADGES)
+            .filter(BADGES.the_user == user_id, BADGES.is_revoked == False)
+            .first()
+        )
+        if not badge:
+            return False, "Aucun badge actif trouvé pour cet utilisateur."
+
+        # Vérifie que le badge NFC scanné correspond au badge enregistré
+        header_hash = sha256(header_id.encode("utf-8")).hexdigest()
+        if header_hash != badge.header_id:
+            return False, "Badge NFC non reconnu ou n'appartient pas à cet utilisateur."
+
+        # Vérifie l'expiration du badge
+        now = datetime.utcnow()
+        if badge.expires_at:
+            exp = badge.expires_at
+            exp_dt = exp if isinstance(exp, datetime) else datetime(exp.year, exp.month, exp.day)
+            if exp_dt < now:
+                return False, "Badge expiré."
+
+        # Déchiffre le secret TOTP stocké
+        fernet_totp_key = os.getenv("FERNET_TOTP_KEY")
+        if not fernet_totp_key:
+            return False, "Clé FERNET_TOTP_KEY non configurée."
+
+        fernet = Fernet(fernet_totp_key)
+        totp_secret = decrypt_totp_secret(badge.totp_secret, fernet)
+
+        # Vérifie le code TOTP (fenêtre de ±1 intervalle pour la tolérance réseau)
+        totp = pyotp.TOTP(totp_secret)
+        if not totp.verify(totp_code, valid_window=1):
+            return False, "Code TOTP invalide ou expiré."
+
+        return True, ""
+
+    except Exception as e:
+        return False, f"Erreur lors de la vérification : {e}"
+    finally:
+        session.close()
+
+
 def list_badges(is_revoked: bool) -> list[tuple[BADGES, str]]:
     try:
         badges = db.select_badges_by_revocation_status(is_revoked)

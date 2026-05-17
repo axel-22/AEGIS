@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
+import hashlib
 import secrets
 import os
 
@@ -175,35 +176,375 @@ def cast_vote(nonce_value: str, vote_id: int, vote_choice: int):
         )
 
         if not nonce:
-            raise ValueError("Nonce invalide")
-
+            raise ValueError("Nonce invalide.")
         if nonce.used:
-            raise ValueError("Nonce déjà utilisé")
+            raise ValueError("Nonce déjà utilisé : vous avez déjà voté.")
+        if nonce.the_vote != vote_id:
+            raise ValueError("Nonce non associé à ce vote.")
 
         vote = session.get(VOTES, vote_id)
         if not vote or not vote.is_active:
-            raise ValueError("Vote invalide ou fermé")
+            raise ValueError("Vote invalide ou inactif.")
+        if vote.vote_status != "open":
+            raise ValueError("Ce vote n'est pas ouvert.")
+
+        # Vérifier que le choix correspond à une réponse valide
+        valid_answer = (
+            session.query(ANSWERS)
+            .filter(ANSWERS.the_vote == vote_id, ANSWERS.answer_id == vote_choice)
+            .first()
+        )
+        if not valid_answer:
+            raise ValueError("Choix de réponse invalide.")
+
+        # Chaîne de hash : récupère le hash de la dernière enveloppe du vote
+        last_envelope = (
+            session.query(ENVELOPES)
+            .filter(ENVELOPES.the_vote == vote_id)
+            .order_by(ENVELOPES.envelope_id.desc())
+            .first()
+        )
+        prev_hash = last_envelope.current_hash if last_envelope else "GENESIS"
+
+        now = datetime.utcnow()
+        raw = f"{prev_hash}{vote_id}{vote_choice}{now.isoformat()}"
+        current_hash = hashlib.sha256(raw.encode()).hexdigest()
+
+        # Mode auditable : lier le votant à l'enveloppe
+        # Mode confidentiel : the_user reste NULL (anonymat)
+        the_user = nonce.the_user if vote.vote_mode == "auditable" else None
 
         envelope = ENVELOPES(
             the_vote=vote.vote_id,
-            the_user=None,              # volontairement NULL
-            the_badge=None,             # plus tard
-            the_date=datetime.utcnow(),
+            the_user=the_user,
+            the_badge=None,
+            the_date=now,
             vote_choice=vote_choice,
-            user_signature_valid=False, # plus tard
-            entry_hash="TEMP",
-            current_hash="TEMP",
+            prev_hash=prev_hash,
+            current_hash=current_hash,
             siem_loged=False,
         )
 
         session.add(envelope)
+        # flush pour obtenir envelope_id avant le commit
+        session.flush()
 
         nonce.used = True
-        nonce.used_at = datetime.utcnow()
+        nonce.used_at = now
+        nonce.the_envelope = envelope.envelope_id
 
         session.commit()
+        session.refresh(envelope)
+
+        # Clôture automatique si tous ont voté ou si le vote a expiré
+        _auto_close_if_needed(vote_id)
+
         return envelope
 
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+# =========================
+# TOUS LES VOTES (admin)
+# =========================
+def get_all_votes() -> list['VOTES']:
+    close_expired_votes()
+    session = db.get_session()
+    try:
+        return session.query(VOTES).order_by(VOTES.vote_id.desc()).all()
+    finally:
+        session.close()
+
+
+# =========================
+# DÉPOUILLEMENT D'UN VOTE
+# =========================
+def count_results(vote_id: int) -> dict:
+    """Calcule les résultats d'un vote selon son type (majorité / unanimité / minimum_requis)."""
+    session = db.get_session()
+    try:
+        vote = session.get(VOTES, vote_id)
+        if not vote:
+            raise ValueError("Vote non trouvé.")
+
+        envelopes = session.query(ENVELOPES).filter(ENVELOPES.the_vote == vote_id).all()
+        answers   = session.query(ANSWERS).filter(ANSWERS.the_vote == vote_id).all()
+        total_assigned = session.query(NONCES).filter(NONCES.the_vote == vote_id).count()
+        total_votes = len(envelopes)
+
+        counts = {a.answer_id: {"text": a.answer_text, "count": 0} for a in answers}
+        for env in envelopes:
+            if env.vote_choice in counts:
+                counts[env.vote_choice]["count"] += 1
+
+        if total_votes == 0:
+            verdict = "EN ATTENTE DE VOTES"
+        elif vote.vote_type == "unanimité":
+            unique = {e.vote_choice for e in envelopes}
+            if len(unique) == 1:
+                winner_id = next(iter(unique))
+                verdict = f"APPROUVÉ À L'UNANIMITÉ → {counts[winner_id]['text']}"
+            else:
+                verdict = "REJETÉ — pas d'unanimité"
+        elif vote.vote_type == "majorité":
+            max_count = max(c["count"] for c in counts.values())
+            tops = [c for c in counts.values() if c["count"] == max_count]
+            if len(tops) == 1:
+                verdict = f"MAJORITÉ → {tops[0]['text']}"
+            else:
+                verdict = "ÉGALITÉ"
+        elif vote.vote_type == "minimum_requis":
+            k = vote.k_required or 0
+            max_count = max((c["count"] for c in counts.values()), default=0)
+            tops = [c for c in counts.values() if c["count"] == max_count]
+            if max_count >= k and len(tops) == 1:
+                verdict = f"APPROUVÉ ({max_count}/{k} requis) → {tops[0]['text']}"
+            elif max_count >= k:
+                verdict = f"ÉGALITÉ (seuil atteint : {max_count}/{k})"
+            else:
+                verdict = f"SEUIL NON ATTEINT ({max_count}/{k} requis)"
+        else:
+            verdict = "TYPE DE VOTE INCONNU"
+
+        return {
+            "vote_id":        vote.vote_id,
+            "question":       vote.question,
+            "vote_type":      vote.vote_type,
+            "vote_mode":      vote.vote_mode,
+            "vote_status":    vote.vote_status,
+            "timeout_at":     vote.timeout_at,
+            "total_assigned": total_assigned,
+            "total_votes":    total_votes,
+            "counts":         counts,
+            "verdict":        verdict,
+        }
+    finally:
+        session.close()
+
+
+# =========================
+# VOTES EN COURS + VOTANTS EN ATTENTE (admin)
+# =========================
+def get_ongoing_votes_with_pending_voters() -> list[dict]:
+    """Pour chaque vote ouvert, retourne les utilisateurs n'ayant pas encore voté."""
+    close_expired_votes()
+    session = db.get_session()
+    try:
+        open_votes = session.query(VOTES).filter(
+            VOTES.is_active == True,
+            VOTES.vote_status == "open",
+        ).all()
+
+        result = []
+        for vote in open_votes:
+            pending = (
+                session.query(NONCES, USERS)
+                .join(USERS, NONCES.the_user == USERS.user_id)
+                .filter(NONCES.the_vote == vote.vote_id, NONCES.used == False)
+                .all()
+            )
+            voted_count = session.query(NONCES).filter(
+                NONCES.the_vote == vote.vote_id, NONCES.used == True
+            ).count()
+
+            result.append({
+                "vote_id":     vote.vote_id,
+                "question":    vote.question,
+                "vote_mode":   vote.vote_mode,
+                "timeout_at":  vote.timeout_at,
+                "voted_count": voted_count,
+                "total":       len(pending) + voted_count,
+                "pending":     [
+                    (u.user_id, u.username, u.first_name, u.last_name)
+                    for _, u in pending
+                ],
+            })
+        return result
+    finally:
+        session.close()
+
+
+# =========================
+# VOTES PASSÉS D'UN UTILISATEUR + RÉSULTATS
+# =========================
+def get_past_votes_for_user(user_id: int) -> list[dict]:
+    """Retourne les votes auxquels l'utilisateur a été assigné, avec résultats et son choix."""
+    session = db.get_session()
+    try:
+        nonces_votes = (
+            session.query(NONCES, VOTES)
+            .join(VOTES, NONCES.the_vote == VOTES.vote_id)
+            .filter(NONCES.the_user == user_id)
+            .order_by(VOTES.vote_id.desc())
+            .all()
+        )
+
+        result = []
+        for nonce, vote in nonces_votes:
+            answers   = session.query(ANSWERS).filter(ANSWERS.the_vote == vote.vote_id).all()
+            envelopes = session.query(ENVELOPES).filter(ENVELOPES.the_vote == vote.vote_id).all()
+
+            counts = {a.answer_id: {"text": a.answer_text, "count": 0} for a in answers}
+            for env in envelopes:
+                if env.vote_choice in counts:
+                    counts[env.vote_choice]["count"] += 1
+
+            user_choice_text = None
+            if nonce.used and vote.vote_mode == "auditable" and nonce.the_envelope:
+                env = session.get(ENVELOPES, nonce.the_envelope)
+                if env and env.vote_choice in counts:
+                    user_choice_text = counts[env.vote_choice]["text"]
+
+            result.append({
+                "vote_id":          vote.vote_id,
+                "question":         vote.question,
+                "vote_type":        vote.vote_type,
+                "vote_mode":        vote.vote_mode,
+                "vote_status":      vote.vote_status,
+                "timeout_at":       vote.timeout_at,
+                "has_voted":        nonce.used,
+                "user_choice_text": user_choice_text,
+                "counts":           counts,
+                "total_votes":      len(envelopes),
+            })
+        return result
+    finally:
+        session.close()
+
+
+# =========================
+# VOTES EN ATTENTE POUR UN UTILISATEUR
+# =========================
+def get_pending_votes_for_user(user_id: int) -> list[tuple['NONCES', 'VOTES']]:
+    """Retourne les (nonce, vote) où l'utilisateur n'a pas encore voté."""
+    close_expired_votes()
+    session = db.get_session()
+    try:
+        results = (
+            session.query(NONCES, VOTES)
+            .join(VOTES, NONCES.the_vote == VOTES.vote_id)
+            .filter(
+                NONCES.the_user == user_id,
+                NONCES.used == False,
+                VOTES.is_active == True,
+                VOTES.vote_status == "open",
+            )
+            .all()
+        )
+        return results
+    finally:
+        session.close()
+
+
+# =========================
+# OPTIONS DE RÉPONSE D'UN VOTE
+# =========================
+def get_answers_for_vote(vote_id: int) -> list['ANSWERS']:
+    """Retourne les options de réponse disponibles pour un vote."""
+    session = db.get_session()
+    try:
+        return session.query(ANSWERS).filter(ANSWERS.the_vote == vote_id).all()
+    finally:
+        session.close()
+
+
+# =========================
+# CLÔTURE MANUELLE D'UN VOTE (admin)
+# =========================
+def close_vote(vote_id: int) -> 'VOTES':
+    """Ferme manuellement un vote (admin). Lève ValueError si déjà fermé."""
+    session = db.get_session()
+    try:
+        vote = session.get(VOTES, vote_id)
+        if not vote:
+            raise ValueError("Vote non trouvé.")
+        if vote.vote_status != "open":
+            raise ValueError(f"Ce vote est déjà '{vote.vote_status}', impossible de le fermer.")
+
+        now = datetime.utcnow()
+        vote.vote_status = "closed"
+        vote.is_active   = False
+        vote.closed_at   = now
+        session.commit()
+        session.refresh(vote)
+        return vote
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+# =========================
+# CLÔTURE AUTOMATIQUE PAR EXPIRATION (bulk)
+# =========================
+def close_expired_votes() -> int:
+    """Ferme tous les votes dont timeout_at est dépassé. Retourne le nombre fermés."""
+    session = db.get_session()
+    try:
+        now = datetime.utcnow()
+        expired = (
+            session.query(VOTES)
+            .filter(
+                VOTES.vote_status == "open",
+                VOTES.timeout_at.isnot(None),
+                VOTES.timeout_at <= now,
+            )
+            .all()
+        )
+        for vote in expired:
+            vote.vote_status = "closed"
+            vote.is_active   = False
+            vote.closed_at   = now
+        if expired:
+            session.commit()
+        return len(expired)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+# =========================
+# CHECK CLÔTURE AUTOMATIQUE APRÈS UN VOTE
+# =========================
+def _auto_close_if_needed(vote_id: int) -> bool:
+    """Vérifie si un vote doit être fermé (expiré ou tous ont voté). Retourne True si fermé."""
+    session = db.get_session()
+    try:
+        vote = session.get(VOTES, vote_id)
+        if not vote or vote.vote_status != "open":
+            return False
+
+        now = datetime.utcnow()
+        should_close = False
+
+        # Condition 1 : expiration dépassée
+        if vote.timeout_at and vote.timeout_at <= now:
+            should_close = True
+
+        # Condition 2 : tous les votants assignés ont voté
+        if not should_close:
+            total = session.query(NONCES).filter(NONCES.the_vote == vote_id).count()
+            used  = session.query(NONCES).filter(
+                NONCES.the_vote == vote_id, NONCES.used == True
+            ).count()
+            if total > 0 and used == total:
+                should_close = True
+
+        if should_close:
+            vote.vote_status = "closed"
+            vote.is_active   = False
+            vote.closed_at   = now
+            session.commit()
+            return True
+
+        return False
     except Exception:
         session.rollback()
         raise

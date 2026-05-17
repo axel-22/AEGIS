@@ -97,7 +97,7 @@ class ANSWERS(Base):
     __tablename__ = 'ANSWERS'
 
     answer_text: Mapped[str] = mapped_column(String(500), nullable=False)
-    answer_id: Mapped[Optional[int]] = mapped_column(Integer, primary_key=True)
+    answer_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     the_vote: Mapped[Optional[int]] = mapped_column(ForeignKey('VOTES.vote_id'))
 
     VOTES_: Mapped[Optional['VOTES']] = relationship('VOTES', back_populates='ANSWERS')

@@ -328,8 +328,7 @@ def create_vote():
             print(f"Erreur lors de l'enregistrement des réponses : {e}") 
     else:
         try:
-            votes.add_answers_to_vote(vote.vote_id, "OUI")
-            votes.add_answers_to_vote(vote.vote_id, "NON")
+            votes.add_answers_to_vote(vote.vote_id, ["OUI", "NON"])
             print("✅ Réponses 'OUI' et 'NON' enregistrées pour ce vote.")
         except ValueError as e:
             print(f"Erreur de validation lors de l'enregistrement des réponses : {e}")
@@ -370,9 +369,318 @@ def affecte_vote(vote_id: int):
     try:
         for user_id in user_ids:
             votes.assign_vote_to_user(vote_id, user_id)
-        print(f"✅ Vote ID {vote_id} affecté à {len(users_ids)} utilisateurs.")
+        print(f"✅ Vote ID {vote_id} affecté à {len(user_ids)} utilisateurs.")
     except Exception as e:
         print(f"Erreur lors de l'affectation du vote aux utilisateurs : {e}")
+
+def _print_vote_results(result: dict):
+    """Affiche les résultats d'un vote (helper partagé entre C3 et F1)."""
+    mode_emoji = "🔍" if result["vote_mode"] == "auditable" else "🔒"
+    status_label = "🟢 Ouvert" if result["vote_status"] == "open" else "🔴 Fermé"
+    print(f"\n{'═' * 62}")
+    print(f"  📋 Vote #{result['vote_id']} — {result['question']}")
+    print(f"  Type : {result['vote_type']}  |  {mode_emoji} {result['vote_mode']}  |  {status_label}")
+    print(f"  Expire le : {result['timeout_at']}")
+    print(f"  Participation : {result['total_votes']}/{result['total_assigned']} votant(s)")
+    print(f"{'─' * 62}")
+    if result["counts"]:
+        print("  📊 Résultats :")
+        for data in result["counts"].values():
+            bar = "█" * (data["count"] * 4)
+            print(f"      {data['text']:20s}  {bar} {data['count']} vote(s)")
+    else:
+        print("  ⚠️  Aucune option de réponse définie.")
+    print(f"{'─' * 62}")
+    print(f"  🏆 Verdict : {result['verdict']}")
+    print(f"{'═' * 62}\n")
+
+
+def force_close_vote():
+    """C6 — Admin : ferme manuellement un vote ouvert."""
+    try:
+        all_votes = votes.get_all_votes()
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    open_votes = [v for v in all_votes if v.vote_status == "open"]
+    if not open_votes:
+        print("✅ Aucun vote ouvert à fermer.")
+        return
+
+    print(f"\n🟢 Votes actuellement ouverts :\n")
+    for v in open_votes:
+        print(f"  [{v.vote_id}] {v.question}  ({v.vote_type} / {v.vote_mode}) — expire : {v.timeout_at}")
+
+    vote_id_str = input("\n➡️  ID du vote à fermer : ").strip()
+    try:
+        vote_id = int(vote_id_str)
+    except ValueError:
+        print("❌ ID invalide.")
+        return
+
+    confirm = input(f"⚠️  Confirmer la fer
+    
+    meture du vote #{vote_id} ? (oui/non) : ").strip().lower()
+    if confirm not in ('oui', 'o', 'yes', 'y'):
+        print("❌ Fermeture annulée.")
+        return
+
+    try:
+        vote = votes.close_vote(vote_id)
+        print(f"✅ Vote #{vote.vote_id} fermé à {vote.closed_at}.")
+    except ValueError as e:
+        print(f"❌ {e}")
+    except Exception as e:
+        print(f"❌ Erreur inattendue : {e}")
+
+
+def list_ongoing_votes():
+    """C5 — Liste les votes en cours et les votants qui n'ont pas encore voté."""
+    try:
+        data = votes.get_ongoing_votes_with_pending_voters()
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    if not data:
+        print("✅ Aucun vote en cours.")
+        return
+
+    print(f"\n🗳️  Votes en cours : {len(data)}\n")
+    for entry in data:
+        mode_emoji = "🔍" if entry["vote_mode"] == "auditable" else "🔒"
+        progress = f"{entry['voted_count']}/{entry['total']}"
+        print(f"  [Vote #{entry['vote_id']}] {mode_emoji} {entry['question']}")
+        print(f"      ⏱️  Expire le : {entry['timeout_at']}  |  Participation : {progress}")
+        if entry["pending"]:
+            print(f"      ⏳ N'ont pas encore voté ({len(entry['pending'])}) :")
+            for uid, username, first, last in entry["pending"]:
+                print(f"          - {first} {last} ({username}, ID {uid})")
+        else:
+            print("      ✅ Tous les votants assignés ont voté !")
+        print()
+
+
+def show_vote_results_admin():
+    """C3 — Admin : liste les votes puis affiche le dépouillement complet d'un vote choisi."""
+    try:
+        all_votes = votes.get_all_votes()
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    if not all_votes:
+        print("❌ Aucun vote dans la base.")
+        return
+
+    print(f"\n📋 Votes disponibles :\n")
+    for v in all_votes:
+        status_emoji = "🟢" if v.vote_status == "open" else "🔴"
+        print(f"  [{v.vote_id}] {status_emoji} {v.question}  ({v.vote_type} / {v.vote_mode}) — {v.vote_status}")
+
+    vote_id_str = input("\n➡️  ID du vote à dépouiller : ").strip()
+    try:
+        vote_id = int(vote_id_str)
+    except ValueError:
+        print("❌ ID invalide.")
+        return
+
+    try:
+        result = votes.count_results(vote_id)
+    except ValueError as e:
+        print(f"❌ {e}")
+        return
+    except Exception as e:
+        print(f"❌ Erreur inattendue : {e}")
+        return
+
+    _print_vote_results(result)
+
+
+def list_my_votes():
+    """F1 — Utilisateur : ses votes assignés, résultats courants, et son choix (si auditable)."""
+    user_id_str = input("➡️  Votre ID utilisateur : ").strip()
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        print("❌ ID invalide.")
+        return
+
+    user = users.get_user_by_id(user_id)
+    if not user:
+        print(f"❌ Aucun utilisateur trouvé avec l'ID {user_id}.")
+        return
+
+    print(f"\n👤 {user.first_name} {user.last_name} ({user.username})\n")
+
+    try:
+        data = votes.get_past_votes_for_user(user_id)
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    if not data:
+        print("📭 Vous n'avez été assigné à aucun vote.")
+        return
+
+    for entry in data:
+        status_emoji = "🟢" if entry["vote_status"] == "open" else "🔴"
+        voted_emoji  = "✅" if entry["has_voted"] else "⏳"
+        mode_emoji   = "🔍" if entry["vote_mode"] == "auditable" else "🔒"
+
+        print(f"{'─' * 55}")
+        print(f"  {voted_emoji} [Vote #{entry['vote_id']}] {status_emoji} {entry['question']}")
+        print(f"     Type : {entry['vote_type']}  |  {mode_emoji} {entry['vote_mode']}  |  Expire : {entry['timeout_at']}")
+
+        if entry["has_voted"]:
+            if entry["vote_mode"] == "auditable" and entry["user_choice_text"]:
+                print(f"     📌 Votre choix : {entry['user_choice_text']}")
+            else:
+                print("     🔒 Vous avez voté (choix anonyme).")
+        else:
+            print("     ⏳ Vous n'avez pas encore voté.")
+
+        if entry["counts"]:
+            print(f"     📊 Résultats courants ({entry['total_votes']} vote(s)) :")
+            for d in entry["counts"].values():
+                print(f"         {d['text']:20s} : {d['count']} vote(s)")
+
+    print(f"{'─' * 55}")
+
+
+def cast_vote():
+    """Interface CLI pour voter : affiche les votes en attente et enregistre le bulletin."""
+
+    # 1. Identification de l'utilisateur
+    user_id_str = input("➡️  Votre ID utilisateur : ").strip()
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        print("❌ ID invalide, veuillez entrer un nombre entier.")
+        return
+
+    user = users.get_user_by_id(user_id)
+    if not user:
+        print(f"❌ Aucun utilisateur trouvé avec l'ID {user_id}.")
+        return
+
+    print(f"\n👤 Bienvenue, {user.first_name} {user.last_name} ({user.username})\n")
+
+    # 2. Votes en attente (nonces non utilisés)
+    try:
+        pending = votes.get_pending_votes_for_user(user_id)
+    except Exception as e:
+        print(f"❌ Erreur lors de la récupération des votes : {e}")
+        return
+
+    if not pending:
+        print("✅ Vous n'avez aucun vote en attente.")
+        return
+
+    print(f"🗳️  Votes en attente ({len(pending)}) :\n")
+    for i, (nonce, vote) in enumerate(pending):
+        mode_emoji = "🔍" if vote.vote_mode == "auditable" else "🔒"
+        print(f"  {i + 1}. [Vote #{vote.vote_id}] {mode_emoji} {vote.question}  ({vote.vote_mode})")
+        if vote.description_text:
+            print(f"       📝 {vote.description_text}")
+        print(f"       ⏱️  Expire le : {vote.timeout_at}")
+
+    # 3. Sélection du vote
+    choice_str = input("\n➡️  Sélectionnez un vote (numéro) : ").strip()
+    try:
+        choice_idx = int(choice_str) - 1
+        if not (0 <= choice_idx < len(pending)):
+            raise ValueError()
+    except ValueError:
+        print("❌ Sélection invalide.")
+        return
+
+    selected_nonce, selected_vote = pending[choice_idx]
+
+    # 4. Affichage du vote et des options
+    print(f"\n{'═' * 60}")
+    print(f"📋 {selected_vote.question}")
+    if selected_vote.description_text:
+        print(f"   {selected_vote.description_text}")
+    if selected_vote.vote_mode == "auditable":
+        print("   🔍 Mode auditable — votre vote sera associé à votre identité.")
+    else:
+        print("   🔒 Mode confidentiel — votre vote est anonyme.")
+    print(f"{'═' * 60}\n")
+
+    try:
+        answers = votes.get_answers_for_vote(selected_vote.vote_id)
+    except Exception as e:
+        print(f"❌ Erreur lors de la récupération des options : {e}")
+        return
+
+    if not answers:
+        print("❌ Aucune option de réponse disponible pour ce vote.")
+        return
+
+    print("Options de réponse :")
+    for a in answers:
+        print(f"  [{a.answer_id}] {a.answer_text}")
+
+    # 5. Choix de la réponse
+    answer_id_str = input("\n➡️  Entrez l'ID de votre choix : ").strip()
+    try:
+        answer_id = int(answer_id_str)
+        valid_ids = [a.answer_id for a in answers]
+        if answer_id not in valid_ids:
+            raise ValueError()
+    except ValueError:
+        print("❌ Choix invalide.")
+        return
+
+    chosen_text = next(a.answer_text for a in answers if a.answer_id == answer_id)
+
+    # 6. Authentification NFC + TOTP
+    print(f"\n🔐 Authentification requise pour valider le vote « {chosen_text} ».")
+    print("   Passez votre badge NFC devant le lecteur (30 secondes)...")
+    print("   (Laissez le délai expirer puis répondez 'non' pour annuler)\n")
+
+    header_id = None
+    for attempt in range(2):
+        try:
+            header_id = badges.get_header_id_from_nfc()
+            print(f"   ✅ Badge détecté.")
+            break
+        except RuntimeError as e:
+            print(f"   ❌ {e}")
+            if attempt == 0:
+                retry = input("   Réessayer ? (oui/non) : ").strip().lower()
+                if retry not in ('oui', 'o', 'yes', 'y'):
+                    print("❌ Vote annulé.")
+                    return
+            else:
+                print("❌ Impossible de lire le badge. Vote annulé.")
+                return
+
+    totp_code = input("➡️  Code TOTP (Google Authenticator) : ").strip()
+
+    ok, error = badges.verify_badge_and_totp(user_id, header_id, totp_code)
+    if not ok:
+        print(f"❌ Authentification échouée : {error}")
+        return
+
+    print("   ✅ Identité vérifiée.\n")
+
+    # 7. Enregistrement
+    try:
+        envelope = votes.cast_vote(selected_nonce.nonce, selected_vote.vote_id, answer_id)
+        print(f"\n✅ Vote enregistré avec succès !")
+        if selected_vote.vote_mode == "auditable":
+            print(f"   🔍 Enveloppe #{envelope.envelope_id} liée à votre identité.")
+        else:
+            print(f"   🔒 Enveloppe #{envelope.envelope_id} enregistrée anonymement.")
+        print(f"   🔗 Hash d'intégrité : {envelope.current_hash[:20]}...")
+    except ValueError as e:
+        print(f"❌ Erreur de validation : {e}")
+    except Exception as e:
+        print(f"❌ Erreur inattendue : {e}")
+
 
 def fernet_key(the_file: str):
     """Interface CLI pour générer une clé Fernet pour les TOTP, les VOTES et les ANSWERS."""

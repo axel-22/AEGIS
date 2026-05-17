@@ -37,8 +37,10 @@ def show_menu():
     print("🗳️  Votes - C")
     print("  1 →  📩 Créer un nouveau vote")
     print("  2 →  🔄 Editer un vote")
-    print("  3 →  🧾 Lister les votes précédents")
-    print("  4 →  🔗 Vérifier la chaîne d’intégrité (blockchain)\n")
+    print("  3 →  📊 Dépouiller un vote — voir les résultats")
+    print("  4 →  🔗 Vérifier la chaîne d’intégrité (blockchain)")
+    print("  5 →  🔍 Votes en cours — votants en attente")
+    print("  6 →  🔒 Forcer la clôture d’un vote\n")
 
     print("🧠  Sécurité & Outils - D")
     print("  1 →   🔑 Générer une clé Fernet pour le TOTP")
@@ -135,11 +137,22 @@ def main():
             print("Enter pour continuer...")
             input()
         elif choice[0] == "C" and choice[1] == "3":
-            print("\n🧾 Historique des votes précédents...\n")
+            print("\n📊 Dépouillement d'un vote...\n")
+            c.show_vote_results_admin()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "C" and choice[1] == "4":
             print("\n🔗 Vérification de la chaîne d’intégrité (hashchain)...\n")
+            print("Enter pour continuer...")
+            input()
+        elif choice[0] == "C" and choice[1] == "5":
+            print("\n🔍 Votes en cours — votants en attente...\n")
+            c.list_ongoing_votes()
+            print("Enter pour continuer...")
+            input()
+        elif choice[0] == "C" and choice[1] == "6":
+            print("\n🔒 Fermeture manuelle d'un vote...\n")
+            c.force_close_vote()
             print("Enter pour continuer...")
             input()
 
@@ -175,11 +188,13 @@ def main():
             input()
         #Section F - Mes Votes
         elif choice[0] == "F" and choice[1] == "1":
-            print("\n🧾 Voir mes votes en cours...\n")
+            print("\n🧾 Mes votes — résultats et suivi...\n")
+            c.list_my_votes()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "F" and choice[1] == "2":
             print("\n🗳️ Voter...\n")
+            c.cast_vote()
             print("Enter pour continuer...")
             input()
         # Exit option    
