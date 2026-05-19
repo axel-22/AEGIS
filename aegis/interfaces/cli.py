@@ -419,9 +419,7 @@ def force_close_vote():
         print("❌ ID invalide.")
         return
 
-    confirm = input(f"⚠️  Confirmer la fer
-    
-    meture du vote #{vote_id} ? (oui/non) : ").strip().lower()
+    confirm = input(f"⚠️  Confirmer la fermeture du vote #{vote_id} ? (oui/non) : ").strip().lower()
     if confirm not in ('oui', 'o', 'yes', 'y'):
         print("❌ Fermeture annulée.")
         return

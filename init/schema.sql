@@ -20,7 +20,7 @@ CREATE TABLE USERS (
     last_name VARCHAR(50) NOT NULL,
     email VARCHAR(50) UNIQUE,
     job VARCHAR(50),
-    the_role VARCHAR(50), -- (member, validator, admin, superadmin etc.)
+    the_role VARCHAR(50), -- (member, manager, auditor, admin, superadmin etc.)
     created_at DATETIME,
     updated_at DATETIME
 );
