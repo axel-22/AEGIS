@@ -133,6 +133,7 @@ def main():
             input()
         elif choice[0] == "C" and choice[1] == "2":
             print("\n🔄 Editer un vote...\n")
+            c.edit_vote()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "C" and choice[1] == "3":
@@ -141,7 +142,7 @@ def main():
             print("Enter pour continuer...")
             input()
         elif choice[0] == "C" and choice[1] == "4":
-            print("\n🔗 Vérification de la chaîne d’intégrité (hashchain)...\n")
+            c.verify_integrity()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "C" and choice[1] == "5":
@@ -174,15 +175,15 @@ def main():
 
         #Section E - Maintenance & Logs
         elif choice[0] == "E" and choice[1] == "1":
-            print("\n📰 Vérification de la cohérence interne de la base...\n")
+            c.show_logs()
             print("Enter pour continuer...")
             input()
         elif choice[0] == "E" and choice[1] == "2":
-            print("\n📊  Export des logs vers le SIEM...\n")
+            print("\n📊  Export des logs vers le SIEM — fonctionnalité à implémenter\n")
             print("Enter pour continuer...")
             input()
         elif choice[0] == "E" and choice[1] == "3":
-            print("\n💾 Sauvegarde complète de la base de données...\n")
+            c.backup_db()
             print("Enter pour continuer...")
             input()
         #Section F - Mes Votes

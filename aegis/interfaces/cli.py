@@ -8,7 +8,8 @@ from datetime import datetime
 from datetime import date
 import re
 
-from aegis.services import users, badges, votes, utils
+from aegis.services import users, badges, votes, utils, maintenance
+from aegis.core._logger import read_recent_logs
 
 def create_user():
     """Interface CLI pour créer un nouvel utilisateur."""
@@ -678,6 +679,148 @@ def cast_vote():
         print(f"❌ Erreur de validation : {e}")
     except Exception as e:
         print(f"❌ Erreur inattendue : {e}")
+
+
+def edit_vote():
+    """Interface CLI pour éditer un vote (uniquement si aucun bulletin déposé)."""
+    try:
+        all_votes = votes.get_all_votes()
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    if not all_votes:
+        print("❌ Aucun vote dans la base.")
+        return
+
+    print(f"\n📋 Votes disponibles :\n")
+    for v in all_votes:
+        status_emoji = "🟢" if v.vote_status == "open" else "🔴"
+        print(f"  [{v.vote_id}] {status_emoji} {v.question}  ({v.vote_type} / {v.vote_mode}) — {v.vote_status}")
+
+    vote_id_str = input("\n➡️  ID du vote à éditer : ").strip()
+    try:
+        vote_id = int(vote_id_str)
+    except ValueError:
+        print("❌ ID invalide.")
+        return
+
+    vote = next((v for v in all_votes if v.vote_id == vote_id), None)
+    if not vote:
+        print(f"❌ Vote #{vote_id} non trouvé.")
+        return
+
+    print(f"\n✏️  Édition du vote #{vote_id}. Laissez vide pour conserver la valeur actuelle.\n")
+    new_question    = input(f"➡️  Question ({vote.question}) : ").strip()
+    new_description = input(f"➡️  Description ({vote.description_text or ''}) : ").strip()
+    new_vote_type   = input(f"➡️  Type ({vote.vote_type}) [majorité/unanimité/minimum_requis] : ").strip()
+    new_vote_mode   = input(f"➡️  Mode ({vote.vote_mode}) [auditable/confidentiel] : ").strip()
+
+    k_required = None
+    effective_type = new_vote_type or vote.vote_type
+    if effective_type == "minimum_requis":
+        k_str = input(f"➡️  k requis ({vote.k_required}) : ").strip()
+        if k_str:
+            try:
+                k_required = int(k_str)
+            except ValueError:
+                print("⚠️  k requis invalide, valeur conservée.")
+
+    new_timeout = None
+    date_str = input(f"➡️  Date d'expiration ({vote.timeout_at}) [JJ/MM/AAAA, vide pour conserver] : ").strip()
+    if date_str:
+        import re as _re
+        from datetime import date as _date
+        if _re.match(r'^\d{2}/\d{2}/\d{4}$', date_str):
+            day, month, year = map(int, date_str.split('/'))
+            try:
+                new_timeout = _date(year, month, day)
+            except ValueError:
+                print("⚠️  Date invalide, valeur conservée.")
+        else:
+            print("⚠️  Format invalide (JJ/MM/AAAA attendu), valeur conservée.")
+
+    vote_data = {}
+    if new_question:
+        vote_data["question"] = new_question
+    if new_description:
+        vote_data["description_text"] = new_description
+    if new_vote_type:
+        vote_data["vote_type"] = new_vote_type
+    if new_vote_mode:
+        vote_data["vote_mode"] = new_vote_mode
+    if k_required is not None:
+        vote_data["k_required"] = k_required
+    if new_timeout:
+        vote_data["timeout_at"] = new_timeout
+
+    if not vote_data:
+        print("ℹ️  Aucune modification effectuée.")
+        return
+
+    try:
+        updated = votes.edit_vote(vote_id, vote_data)
+        print(f"✅ Vote #{updated.vote_id} mis à jour avec succès !")
+    except ValueError as e:
+        print(f"❌ Erreur de validation : {e}")
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+
+
+def show_logs(n: int = 50):
+    """E1 — Affiche les n dernières lignes de aegis.log."""
+    lines = read_recent_logs(n)
+    if not lines:
+        print("📭 Aucun log disponible (aegis.log vide ou absent).")
+        return
+    print(f"\n📰 Dernières {len(lines)} entrées de aegis.log :\n")
+    print("─" * 80)
+    for line in lines:
+        print(line)
+    print("─" * 80)
+
+
+def backup_db():
+    """E3 — Sauvegarde la base de données aegis.db."""
+    try:
+        dest = maintenance.db_save()
+        print(f"✅ Sauvegarde créée : {dest}")
+    except FileNotFoundError as e:
+        print(f"❌ {e}")
+    except Exception as e:
+        print(f"❌ Erreur lors de la sauvegarde : {e}")
+
+
+def verify_integrity():
+    """C4 — Vérifie la chaîne d'intégrité de tous les votes."""
+    print("\n🔗 Vérification de la chaîne d'intégrité (hashchain)...\n")
+    try:
+        report = maintenance.verify_chain()
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    print(f"  Votes analysés   : {report['total_votes']}")
+    print(f"  Avec bulletins   : {report['checked_votes']}")
+    print(f"  ✅ Intègres       : {report['ok']}")
+    print(f"  ❌ Corrompus      : {report['corrupted']}")
+    print()
+
+    for r in report["results"]:
+        if r["status"] == "VIDE":
+            print(f"  [Vote #{r['vote_id']}] ⬜ VIDE    — {r['question'][:55]}")
+        elif r["status"] == "OK":
+            print(f"  [Vote #{r['vote_id']}] ✅ OK      — {r['question'][:55]} ({r['envelopes_checked']} enveloppe(s))")
+        else:
+            print(f"  [Vote #{r['vote_id']}] ❌ CORROMPU — {r['question'][:55]}")
+            for err in r["errors"]:
+                print(f"       └─ {err}")
+
+    print()
+    if report["corrupted"] == 0:
+        print("✅ Intégrité globale : OK — aucune corruption détectée.")
+    else:
+        print(f"🚨 ALERTE : {report['corrupted']} vote(s) avec chaîne corrompue !")
 
 
 def fernet_key(the_file: str):

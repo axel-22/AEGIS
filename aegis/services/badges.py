@@ -16,6 +16,9 @@ import aegis.services.utils as utils
 
 from aegis.core._models import BADGES, USERS
 from aegis.services.nfc_reader import NFCReader
+from aegis.core._logger import get_logger
+
+log = get_logger("badges")
 
 
 db.set_debug(True)
@@ -78,7 +81,7 @@ def create_badge(username: str, secret: str, header_id: str) -> BADGES:
     )
 
     badge = db.insert_badge(b)
-
+    log.info(f"Badge créé — badge_id={badge.badge_id} username='{username}' header={header_hash[:16]}…")
     return badge
 
 def is_badge_allready_assigned(header_id: str) -> bool:
@@ -170,11 +173,14 @@ def verify_badge_and_totp(user_id: int, header_id: str, totp_code: str) -> tuple
         # Vérifie le code TOTP (fenêtre de ±1 intervalle pour la tolérance réseau)
         totp = pyotp.TOTP(totp_secret)
         if not totp.verify(totp_code, valid_window=1):
+            log.warning(f"Code TOTP invalide — user_id={user_id}")
             return False, "Code TOTP invalide ou expiré."
 
+        log.info(f"Authentification réussie — user_id={user_id}")
         return True, ""
 
     except Exception as e:
+        log.error(f"Erreur lors de la vérification badge user_id={user_id} : {e}")
         return False, f"Erreur lors de la vérification : {e}"
     finally:
         session.close()

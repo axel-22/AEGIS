@@ -7,6 +7,9 @@ from datetime import datetime
 
 import aegis.core._database as db
 from aegis.core._models import USERS, BADGES, SECRETS, ENVELOPES
+from aegis.core._logger import get_logger
+
+log = get_logger("users")
 
 MAX_LEN = 50
 
@@ -78,7 +81,9 @@ def create_user(user_data: dict) -> 'USERS':
     try:
         db.insert_user(new_user)
     except Exception as e:
+        log.error(f"Insertion de l'utilisateur '{user_data.get('username')}' échouée : {e}")
         raise e
+    log.info(f"Utilisateur créé — username='{new_user.username}' role='{new_user.the_role}'")
     return new_user
 
 def list_users(is_revoked: bool) -> list[tuple['USERS', int]]:
@@ -142,7 +147,9 @@ def edit_user(user_id: int, user_data: dict) -> 'USERS':
     try:
         updated_user = db.update_user(user_id, user_data)
     except Exception as e:
+        log.error(f"Mise à jour user_id={user_id} échouée : {e}")
         raise e
+    log.info(f"Utilisateur user_id={user_id} modifié — champs : {list(user_data.keys())}")
     return updated_user
 
 def remove_user(user_id: int) -> None:
@@ -171,8 +178,10 @@ def remove_user(user_id: int) -> None:
         user.updated_at = datetime.utcnow()
 
         session.commit()
+        log.info(f"Utilisateur user_id={uid} anonymisé et révoqué")
     except Exception as e:
         session.rollback()
+        log.error(f"Suppression user_id={uid} échouée : {e}")
         raise Exception(f"Erreur lors de la suppression de l'utilisateur : {e}")
     finally:
         session.close()
@@ -180,6 +189,7 @@ def remove_user(user_id: int) -> None:
         db.delete_secrets(uid)
         db.delete_envelopes(uid)
     except Exception as e:
+        log.error(f"Suppression données associées user_id={uid} échouée : {e}")
         raise Exception(f"Erreur lors de la suppression des données associées : {e}")
     
 

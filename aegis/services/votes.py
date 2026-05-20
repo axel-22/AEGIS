@@ -1,6 +1,6 @@
 # AEGIS - NowBlackout ENSIBS 2025
 # Last modified: 2026-03-02
-# Users Service - Manage all votes 
+# Votes Service - Manage all votes
 
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -13,6 +13,9 @@ import os
 import aegis.core._database as db
 from aegis.core._models import USERS, BADGES, ENVELOPES, ANSWERS, VOTES, NONCES
 from aegis.services import utils
+from aegis.core._logger import get_logger
+
+log = get_logger("votes")
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', 'secrets', 'answer.env')
 load_dotenv(dotenv_path)
@@ -65,14 +68,75 @@ def create_vote(vote_data: dict) -> 'VOTES':
         session.commit()
         session.refresh(vote)
 
+        log.info(f"Vote #{vote.vote_id} créé — '{vote.question[:60]}' ({vote.vote_type}/{vote.vote_mode})")
         return vote
 
     except ValueError as ve:
+        log.error(f"Création du vote refusée : {ve}")
         session.rollback()
         raise ve
     except Exception as e:
+        log.error(f"Erreur inattendue lors de la création du vote : {e}")
         session.rollback()
         raise Exception(f"Erreur lors de la création du vote : {e}")
+    finally:
+        session.close()
+
+
+# =========================
+# ÉDITION D'UN VOTE
+# =========================
+
+def edit_vote(vote_id: int, vote_data: dict) -> 'VOTES':
+    """
+    Édite un vote existant.
+    Refusé si le vote est fermé ou si des bulletins ont déjà été déposés.
+    Champs éditables : question, description_text, vote_type, vote_mode,
+                       k_required, timeout_at (date d'expiration).
+    """
+    EDITABLE = {"question", "description_text", "vote_type", "vote_mode",
+                "k_required", "timeout_at"}
+
+    session = db.get_session()
+    try:
+        vote = session.get(VOTES, vote_id)
+        if not vote:
+            raise ValueError(f"Vote #{vote_id} non trouvé.")
+        if vote.vote_status != "open":
+            raise ValueError(f"Vote #{vote_id} déjà '{vote.vote_status}' — édition impossible.")
+
+        envelope_count = (
+            session.query(ENVELOPES)
+            .filter(ENVELOPES.the_vote == vote_id)
+            .count()
+        )
+        if envelope_count > 0:
+            raise ValueError(
+                f"Vote #{vote_id} : {envelope_count} bulletin(s) déjà déposé(s) — "
+                "édition impossible pour garantir l'intégrité."
+            )
+
+        # Validation puis application des champs
+        for field, value in vote_data.items():
+            if field not in EDITABLE:
+                continue
+            if field == "question":
+                if not value or len(value) > 500:
+                    raise ValueError("La question doit contenir entre 1 et 500 caractères.")
+            if field == "vote_type" and value not in ["majorité", "unanimité", "minimum_requis"]:
+                raise ValueError("Type de vote invalide.")
+            if field == "vote_mode" and value not in ["auditable", "confidentiel"]:
+                raise ValueError("Mode de vote invalide.")
+            setattr(vote, field, value)
+
+        session.commit()
+        session.refresh(vote)
+        log.info(f"Vote #{vote_id} modifié — champs : {list(vote_data.keys())}")
+        return vote
+
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()
 
@@ -153,10 +217,11 @@ def assign_vote_to_user(vote_id: int, user_id: int):
 
         session.add(new_nonce)
         session.commit()
-
+        log.info(f"Vote #{vote_id} assigné à user_id={user_id}")
         return new_nonce
 
     except Exception as e:
+        log.error(f"Assignation vote #{vote_id} → user_id={user_id} échouée : {e}")
         session.rollback()
         raise e
     finally:
@@ -236,12 +301,18 @@ def cast_vote(nonce_value: str, vote_id: int, vote_choice: int):
         session.commit()
         session.refresh(envelope)
 
+        log.info(
+            f"Vote enregistré — vote_id={vote_id} envelope_id={envelope.envelope_id} "
+            f"mode={vote.vote_mode} user={'anonyme' if the_user is None else the_user}"
+        )
+
         # Clôture automatique si tous ont voté ou si le vote a expiré
         _auto_close_if_needed(vote_id)
 
         return envelope
 
-    except Exception:
+    except Exception as e:
+        log.error(f"Échec du vote — vote_id={vote_id} nonce={nonce_value[:8]}… : {e}")
         session.rollback()
         raise
     finally:
@@ -471,8 +542,10 @@ def close_vote(vote_id: int) -> 'VOTES':
         vote.closed_at   = now
         session.commit()
         session.refresh(vote)
+        log.info(f"Vote #{vote_id} fermé manuellement à {now.isoformat()}")
         return vote
-    except Exception:
+    except Exception as e:
+        log.error(f"Fermeture du vote #{vote_id} échouée : {e}")
         session.rollback()
         raise
     finally:
