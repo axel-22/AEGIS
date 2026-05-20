@@ -10,17 +10,17 @@
 #
 # Tous les endpoints protégés retournent 401 si non connecté, 403 si rôle insuffisant.
 
-import os
-import secrets
 from functools import wraps
 
 from flask import Flask, jsonify, request, session
 
-from aegis.services import users, badges, votes
-from aegis.services import rbac
+from aegis.services import users, badges, votes, secret_sharing
+from aegis.services import rbac, maintenance
+from aegis.core._logger import read_recent_logs
+from aegis.core._config import FLASK_SECRET_KEY
 
 app = Flask(__name__)
-app.secret_key = os.getenv("AEGIS_SECRET_KEY") or secrets.token_hex(32)
+app.secret_key = FLASK_SECRET_KEY
 
 
 # ---------------------------------------------------------------------------
@@ -425,6 +425,23 @@ def api_cast_vote(vote_id: int):
     })
 
 
+@app.put("/api/votes/<int:vote_id>")
+@permission_required("votes.manage")
+def api_edit_vote(vote_id: int):
+    """
+    Modifie un vote existant (statut 'open' uniquement, sans enveloppes).
+    Champs éditables : question, description_text, vote_type, vote_mode, k_required, timeout_at.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        updated = votes.edit_vote(vote_id, data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"message": f"Vote #{updated.vote_id} mis à jour.", "vote": _vote_to_dict(updated)})
+
+
 @app.post("/api/votes/<int:vote_id>/close")
 @permission_required("votes.close")
 def api_close_vote(vote_id: int):
@@ -435,6 +452,47 @@ def api_close_vote(vote_id: int):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     return jsonify({"message": f"Vote #{vote.vote_id} fermé.", "closed_at": str(vote.closed_at)})
+
+
+# ---------------------------------------------------------------------------
+# Maintenance & Logs
+# ---------------------------------------------------------------------------
+
+@app.get("/api/logs")
+@permission_required("logs.view")
+def api_logs():
+    """Retourne les N dernières lignes du fichier aegis.log (défaut 100)."""
+    try:
+        n = int(request.args.get("n", 100))
+        n = max(1, min(n, 1000))
+    except ValueError:
+        n = 100
+    lines = read_recent_logs(n)
+    return jsonify({"count": len(lines), "lines": lines})
+
+
+@app.post("/api/maintenance/backup")
+@permission_required("logs.backup")
+def api_backup():
+    """Sauvegarde la base de données dans saves/."""
+    try:
+        path = maintenance.db_save()
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"message": "Sauvegarde créée.", "path": path})
+
+
+@app.get("/api/maintenance/integrity")
+@permission_required("votes.audit")
+def api_integrity():
+    """Vérifie la chaîne d'intégrité de tous les votes."""
+    try:
+        result = maintenance.verify_chain()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(result)
 
 
 # ---------------------------------------------------------------------------
@@ -475,6 +533,173 @@ def api_vote_audit(vote_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Shamir Secret Sharing (SSS)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/secrets")
+@permission_required("secrets.split")
+def api_list_secrets():
+    """Liste tous les secrets (labels + métadonnées, sans parts). Admin+."""
+    try:
+        labels = secret_sharing.list_labels()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(labels)
+
+
+@app.post("/api/secrets")
+@permission_required("secrets.split")
+def api_create_secret():
+    """
+    Crée et distribue un secret Shamir.
+    Body : { "label": "...", "secret": "...", "k": 3, "badge_ids": [1, 2, 4] }
+    """
+    data       = request.get_json(silent=True) or {}
+    label      = (data.get("label") or "").strip()
+    secret_txt = (data.get("secret") or "").strip()
+    k          = data.get("k")
+    badge_ids  = data.get("badge_ids", [])
+
+    if not label or not secret_txt or k is None or not badge_ids:
+        return jsonify({"error": "label, secret, k et badge_ids sont requis."}), 400
+    try:
+        k = int(k)
+    except (TypeError, ValueError):
+        return jsonify({"error": "k doit être un entier."}), 400
+
+    user_id = session["user_id"]
+    try:
+        s = secret_sharing.split_and_store(label, secret_txt, k, badge_ids, user_id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({
+        "message":   "Secret créé et distribué.",
+        "secret_id": s.secret_id,
+        "label":     s.secret_action,
+        "k":         s.secret_share_k,
+        "n":         s.secret_share_n,
+    }), 201
+
+
+@app.delete("/api/secrets/<label>")
+@permission_required("secrets.delete")
+def api_delete_secret(label: str):
+    """Supprime un secret par son label ainsi que toutes ses parts."""
+    try:
+        n_shares = secret_sharing.delete_by_label(label)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"message": f"Secret '{label}' supprimé.", "shares_deleted": n_shares})
+
+
+@app.get("/api/secrets/mine")
+@permission_required("secrets.view_own")
+def api_my_secrets():
+    """Retourne les fragments dont l'utilisateur connecté est dépositaire (sans valeur)."""
+    user_id = session["user_id"]
+    badge_id = secret_sharing.get_badge_id_for_user(user_id)
+    if not badge_id:
+        return jsonify([])
+    try:
+        shares = secret_sharing.get_shares_for_badge(badge_id)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(shares)
+
+
+@app.get("/api/secrets/<int:secret_id>/custodians")
+@permission_required("secrets.split")
+def api_secret_custodians(secret_id: int):
+    """Retourne la liste des dépositaires d'un secret (pour préparer la reconstruction)."""
+    try:
+        custodians = secret_sharing.get_custodians(secret_id)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(custodians)
+
+
+@app.post("/api/secrets/<int:secret_id>/reconstruct")
+@permission_required("secrets.reconstruct")
+def api_reconstruct_secret(secret_id: int):
+    """
+    Reconstruit le secret en vérifiant NFC+TOTP de chaque dépositaire.
+    Body : { "authenticators": [ { "header_id": "...", "totp_code": "..." }, ... ] }
+    Chaque authenticator est résolu vers son badge, puis la part est collectée.
+    Nécessite au moins k authentifications valides.
+    """
+    data           = request.get_json(silent=True) or {}
+    authenticators = data.get("authenticators", [])
+
+    if not authenticators:
+        return jsonify({"error": "Au moins un authenticator est requis."}), 400
+
+    collected_shares: list[str] = []
+    errors: list[str]           = []
+
+    for i, auth in enumerate(authenticators):
+        header_id = (auth.get("header_id") or "").strip()
+        totp_code = (auth.get("totp_code") or "").strip()
+        if not header_id or not totp_code:
+            errors.append(f"Authenticator #{i+1} : header_id et totp_code requis.")
+            continue
+
+        # Retrouver l'utilisateur via le badge (header_id → badge → user)
+        import hashlib as _hl
+        header_hash = _hl.sha256(header_id.encode()).hexdigest()
+        import aegis.core._database as _db
+        from aegis.core._models import BADGES as _BADGES
+        _sess = _db.get_session()
+        try:
+            badge = _sess.query(_BADGES).filter(
+                _BADGES.header_id == header_hash,
+                _BADGES.is_revoked == False,
+            ).first()
+            if not badge:
+                errors.append(f"Authenticator #{i+1} : badge inconnu ou révoqué.")
+                continue
+            badge_id = badge.badge_id
+            user_id  = badge.the_user
+        finally:
+            _sess.close()
+
+        ok, err = badges.verify_badge_and_totp(user_id, header_id, totp_code)
+        if not ok:
+            errors.append(f"Authenticator #{i+1} : authentification échouée — {err}")
+            continue
+
+        share_value = secret_sharing.collect_share(secret_id, badge_id)
+        if share_value is None:
+            errors.append(f"Authenticator #{i+1} : ce badge ne détient pas de part pour ce secret.")
+            continue
+
+        if share_value not in collected_shares:
+            collected_shares.append(share_value)
+
+    try:
+        result = secret_sharing.reconstruct(secret_id, collected_shares)
+    except ValueError as e:
+        return jsonify({
+            "error":            str(e),
+            "shares_collected": len(collected_shares),
+            "auth_errors":      errors,
+        }), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({
+        "message":          "Secret reconstruit avec succès.",
+        "secret":           result,
+        "shares_used":      len(collected_shares),
+        "auth_errors":      errors,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -500,6 +725,5 @@ def _vote_to_dict(v) -> dict:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    port = int(os.getenv("AEGIS_API_PORT", 5001))
-    debug = os.getenv("AEGIS_API_DEBUG", "false").lower() == "true"
-    app.run(host="127.0.0.1", port=port, debug=debug)
+    from aegis.core._config import API_HOST, API_PORT, API_DEBUG
+    app.run(host=API_HOST, port=API_PORT, debug=API_DEBUG)

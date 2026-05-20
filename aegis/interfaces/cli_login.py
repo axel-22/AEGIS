@@ -60,7 +60,7 @@ SECTION_LABELS = {
 def login() -> users.USERS:
     """Authentifie un utilisateur via nom d'utilisateur + badge NFC + TOTP."""
     print("\n" + "═" * 60)
-    print(" " * 18 + "🔐 Connexion à AEGIS")
+    print(" " * 18 + "🔐 Connexion à AEGIS CLI")
     print("═" * 60 + "\n")
 
     username = input("➡️  Nom d'utilisateur : ").strip().lower()
@@ -365,12 +365,17 @@ def _dispatch(code: str, current_user) -> None:
 # Point d'entrée principal
 # ---------------------------------------------------------------------------
 
-def main() -> None:
+def print_header() -> None:
     print("\n" + "═" * 80)
     print(" " * 25 + "🔐 AEGIS Secure Voting System")
     print(" " * 22 + "Prototype de démonstration de vote sécurisé")
     print("═" * 80)
     print(f"🕒  Démarrage à {datetime.now().strftime('%H:%M:%S')}\n")
+
+
+def main(show_header: bool = True) -> None:
+    if show_header:
+        print_header()
 
     try:
         current_user = login()

@@ -8,12 +8,13 @@ from datetime import datetime
 import aegis.core._database as db
 from aegis.core._models import USERS, BADGES, SECRETS, ENVELOPES
 from aegis.core._logger import get_logger
+from aegis.core._config import SQLALCHEMY_DEBUG
 
 log = get_logger("users")
 
 MAX_LEN = 50
 
-db.set_debug(False)
+db.set_debug(SQLALCHEMY_DEBUG)
 
 def is_valid_email(email: str) -> bool:
     """Vérifie si l'email est dans un format valide."""

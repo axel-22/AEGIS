@@ -17,11 +17,11 @@ import aegis.services.utils as utils
 from aegis.core._models import BADGES, USERS
 from aegis.services.nfc_reader import NFCReader
 from aegis.core._logger import get_logger
+from aegis.core._config import SQLALCHEMY_DEBUG
 
 log = get_logger("badges")
 
-
-db.set_debug(True)
+db.set_debug(SQLALCHEMY_DEBUG)
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '..', 'secrets', 'totp.env')
 load_dotenv(dotenv_path)
