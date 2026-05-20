@@ -36,6 +36,10 @@ MENU_ITEMS = [
     ("E3", "Sauvegarder la base de données",        "logs.backup"),
     ("F1", "Voir mes précédents votes",             "votes.results.own"),
     ("F2", "Voter",                                 "votes.cast"),
+    ("F3", "Voir mes fragments secrets",            "secrets.view_own"),
+    ("G1", "Créer un secret partagé",               "secrets.split"),
+    ("G2", "Supprimer un secret",                   "secrets.delete"),
+    ("G3", "Reconstruire un secret",                "secrets.reconstruct"),
 ]
 
 SECTION_LABELS = {
@@ -44,7 +48,8 @@ SECTION_LABELS = {
     "C": ("🗳️", "Votes"),
     "D": ("🧠",  "Sécurité & Outils"),
     "E": ("📦",  "Maintenance & Logs"),
-    "F": ("📩",  "Mes Votes"),
+    "F": ("📩",  "Mes Votes & Fragments"),
+    "G": ("🔐",  "Secrets Partagés (SSS)"),
 }
 
 
@@ -335,8 +340,12 @@ def _dispatch(code: str, current_user) -> None:
         "E1": (cli.show_logs,                    "logs.view"),
         "E2": (lambda: print("📊 Export SIEM — fonctionnalité à implémenter"), "logs.export"),
         "E3": (cli.backup_db,                    "logs.backup"),
-        "F1": (lambda: _my_votes(current_user),  "votes.results.own"),
-        "F2": (lambda: _cast_vote(current_user), "votes.cast"),
+        "F1": (lambda: _my_votes(current_user),                             "votes.results.own"),
+        "F2": (lambda: _cast_vote(current_user),                            "votes.cast"),
+        "F3": (lambda: cli.my_secret_shares(current_user),                  "secrets.view_own"),
+        "G1": (lambda: cli.create_secret_split(current_user),               "secrets.split"),
+        "G2": (lambda: cli.delete_secret(current_user),                     "secrets.delete"),
+        "G3": (lambda: cli.reconstruct_secret_interactive(current_user),    "secrets.reconstruct"),
     }
 
     if code not in actions:

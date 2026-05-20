@@ -8,7 +8,7 @@ from datetime import datetime
 from datetime import date
 import re
 
-from aegis.services import users, badges, votes, utils, maintenance
+from aegis.services import users, badges, votes, utils, maintenance, secret_sharing
 from aegis.core._logger import read_recent_logs
 
 def create_user():
@@ -862,6 +862,259 @@ def fernet_key(the_file: str):
 
     print(f"➡️  Clé Fernet générée et sauvegardée dans {secrets_file}.")
     print("⚠️ Veuillez sauvegarder cette clé en lieu sûr. Elle est nécessaire pour le chiffrement et le déchiffrement des données.")
+
+# =============================================================================
+# SECTION G — SECRETS PARTAGÉS (Shamir Secret Sharing)
+# =============================================================================
+
+def my_secret_shares(current_user) -> None:
+    """F3 — Affiche les secrets dont l'utilisateur connecté est dépositaire."""
+    badge_id = secret_sharing.get_badge_id_for_user(current_user.user_id)
+    if badge_id is None:
+        print("❌ Aucun badge actif trouvé pour votre compte.")
+        return
+
+    shares = secret_sharing.get_shares_for_badge(badge_id)
+    if not shares:
+        print("📭 Vous n'êtes dépositaire d'aucun fragment secret.")
+        return
+
+    print(f"\n🔐 Fragments secrets dont vous êtes dépositaire ({len(shares)}) :\n")
+    print(f"  {'Label':<30} {'Seuil':>6}  {'Émis le'}")
+    print("  " + "─" * 58)
+    for s in shares:
+        issued = s["issued_at"].strftime("%d/%m/%Y") if s["issued_at"] else "—"
+        used_tag = "  [utilisé]" if s["secret_used"] else ""
+        print(f"  {s['label']:<30} {s['k']}/{s['n']:>2}     {issued}{used_tag}")
+    print()
+
+
+def create_secret_split(current_user) -> None:
+    """G1 — Crée un secret et le split entre des membres sélectionnés."""
+    import getpass
+
+    print("\n🔐 Création d'un secret partagé (Shamir Secret Sharing)\n")
+
+    # Label
+    while True:
+        label = input("➡️  Label du secret (ex: 'Clé serveur prod') : ").strip()
+        if label:
+            break
+        print("⚠️  Le label ne peut pas être vide.")
+
+    # Secret (masqué, double saisie)
+    while True:
+        secret1 = getpass.getpass("➡️  Entrez le secret (masqué) : ")
+        secret2 = getpass.getpass("➡️  Confirmez le secret       : ")
+        if secret1 == secret2 and secret1:
+            break
+        print("⚠️  Les secrets ne correspondent pas ou sont vides. Recommencez.")
+
+    secret_text = secret1
+    del secret1, secret2  # effacer de la mémoire locale
+
+    # Sélection des dépositaires (par badge_id)
+    list_all_users()
+    print("\n➡️  Sélectionnez les dépositaires par leur ID de badge.")
+    print("   (Listez les ID badges séparés par des virgules, ex: 1,3,5)")
+    print("   Tip : A1 liste les utilisateurs avec leur Badge ID\n")
+
+    while True:
+        raw = input("➡️  Badge IDs des dépositaires : ").strip()
+        try:
+            badge_ids = [int(x.strip()) for x in raw.split(",") if x.strip()]
+            if len(badge_ids) >= 2:
+                break
+            print("⚠️  Il faut au moins 2 dépositaires.")
+        except ValueError:
+            print("⚠️  Format invalide. Entrez des entiers séparés par des virgules.")
+
+    n = len(badge_ids)
+
+    # k (seuil)
+    while True:
+        k_str = input(f"➡️  Seuil k (minimum de parts requises pour reconstruire, max {n}) : ").strip()
+        try:
+            k = int(k_str)
+            if 2 <= k <= n:
+                break
+            print(f"⚠️  k doit être entre 2 et {n}.")
+        except ValueError:
+            print("⚠️  Entrez un entier.")
+
+    # Confirmation
+    print(f"\n📋 Récapitulatif :")
+    print(f"   Label     : {label}")
+    print(f"   Dépositaires (badge IDs) : {badge_ids}")
+    print(f"   Seuil     : {k}/{n} parts requises pour reconstruire")
+    print("⚠️  Après la création, vous ne pourrez PAS retrouver le secret sans "
+          f"{k} dépositaires.\n")
+
+    confirm = input("➡️  Confirmer la création ? (oui/non) : ").strip().lower()
+    if confirm not in ("oui", "o", "yes", "y"):
+        print("❌ Création annulée.")
+        del secret_text
+        return
+
+    try:
+        secret = secret_sharing.split_and_store(label, secret_text, k, badge_ids, current_user.user_id)
+        del secret_text
+        print(f"\n✅ Secret '{label}' créé (ID {secret.secret_id}) et distribué à {n} dépositaires.")
+        print(f"   ℹ️  {k} parts sur {n} seront nécessaires pour reconstruire.")
+    except ValueError as e:
+        del secret_text
+        print(f"❌ Erreur de validation : {e}")
+    except Exception as e:
+        del secret_text
+        print(f"❌ Erreur : {e}")
+
+
+def delete_secret(current_user) -> None:
+    """G2 — Supprime un secret par son label (admin/superadmin uniquement)."""
+    labels = secret_sharing.list_labels()
+    if not labels:
+        print("📭 Aucun secret partagé dans la base.")
+        return
+
+    print(f"\n📋 Secrets existants :\n")
+    print(f"  {'ID':>4}  {'Label':<35} {'k/n':>5}  {'Émis le':<12}  {'Statut'}")
+    print("  " + "─" * 70)
+    for s in labels:
+        issued  = s["issued_at"].strftime("%d/%m/%Y") if s["issued_at"] else "—"
+        statut  = "utilisé" if s["used"] else "actif"
+        print(f"  {s['secret_id']:>4}  {s['label']:<35} {s['k']}/{s['n']:<3}  {issued:<12}  {statut}")
+
+    label = input("\n➡️  Label du secret à supprimer : ").strip()
+    if not label:
+        print("❌ Label vide.")
+        return
+
+    confirm = input(
+        f"⚠️  Supprimer '{label}' et toutes ses parts ? "
+        "Les dépositaires perdront leur fragment. (oui/non) : "
+    ).strip().lower()
+    if confirm not in ("oui", "o", "yes", "y"):
+        print("❌ Suppression annulée.")
+        return
+
+    try:
+        n = secret_sharing.delete_by_label(label)
+        print(f"✅ Secret '{label}' supprimé — {n} fragment(s) révoqué(s).")
+    except ValueError as e:
+        print(f"❌ {e}")
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+
+
+def reconstruct_secret_interactive(current_user) -> None:
+    """
+    G3 — Reconstruction interactive d'un secret.
+    L'admin sélectionne le label, puis les dépositaires badgent un par un
+    jusqu'à atteindre le seuil k. Le secret est alors affiché.
+    """
+    labels = secret_sharing.list_labels()
+    if not labels:
+        print("📭 Aucun secret partagé dans la base.")
+        return
+
+    print(f"\n📋 Secrets disponibles :\n")
+    for s in labels:
+        issued = s["issued_at"].strftime("%d/%m/%Y") if s["issued_at"] else "—"
+        print(f"  [{s['secret_id']}] '{s['label']}'  ({s['k']}/{s['n']} parts)  —  {issued}")
+
+    sid_str = input("\n➡️  ID du secret à reconstruire : ").strip()
+    try:
+        secret_id = int(sid_str)
+        selected  = next((s for s in labels if s["secret_id"] == secret_id), None)
+        if not selected:
+            print("❌ Secret non trouvé.")
+            return
+    except ValueError:
+        print("❌ ID invalide.")
+        return
+
+    k = selected["k"]
+    n = selected["n"]
+    label = selected["label"]
+
+    # Liste des dépositaires
+    custodians = secret_sharing.get_custodians(secret_id)
+    if not custodians:
+        print("❌ Aucun dépositaire trouvé pour ce secret.")
+        return
+
+    print(f"\n🔐 Reconstruction de '{label}'")
+    print(f"   Il faut {k} parts sur {n}. Dépositaires :")
+    for c in custodians:
+        print(f"     - {c['first_name']} {c['last_name']} ({c['username']}) — badge ID {c['badge_id']}")
+
+    collected_shares: list[str] = []
+    contributed_badges: set[int] = set()
+
+    print(f"\n➡️  Faites badger les dépositaires un par un ({k} nécessaires).\n")
+
+    while len(collected_shares) < k:
+        remaining = k - len(collected_shares)
+        print(f"   [{len(collected_shares)}/{k}] Encore {remaining} part(s) requise(s).")
+        print("   ➡️  Le dépositaire doit passer son badge NFC...")
+
+        # Scan NFC
+        header_id = None
+        for attempt in range(2):
+            try:
+                header_id = badges.get_header_id_from_nfc()
+                print("   ✅ Badge détecté.")
+                break
+            except RuntimeError as e:
+                print(f"   ❌ {e}")
+                if attempt == 0:
+                    retry = input("   Réessayer ? (oui/non) : ").strip().lower()
+                    if retry not in ("oui", "o", "yes", "y"):
+                        print("❌ Reconstruction annulée.")
+                        return
+                else:
+                    print("❌ Impossible de lire le badge. Reconstruction annulée.")
+                    return
+
+        totp_code = input("   ➡️  Code TOTP du dépositaire : ").strip()
+
+        # Identifier le badge parmi les dépositaires
+        badge_matched = None
+        for c in custodians:
+            ok, _ = badges.verify_badge_and_totp(c["user_id"], header_id, totp_code)
+            if ok:
+                badge_matched = c
+                break
+
+        if not badge_matched:
+            print("   ❌ Badge non reconnu parmi les dépositaires de ce secret.")
+            continue
+
+        if badge_matched["badge_id"] in contributed_badges:
+            print(f"   ⚠️  {badge_matched['username']} a déjà contribué sa part.")
+            continue
+
+        share_value = secret_sharing.collect_share(secret_id, badge_matched["badge_id"])
+        if share_value is None:
+            print("   ❌ Aucune part trouvée pour ce badge.")
+            continue
+
+        collected_shares.append(share_value)
+        contributed_badges.add(badge_matched["badge_id"])
+        print(f"   ✅ Part de {badge_matched['first_name']} {badge_matched['last_name']} collectée.")
+
+    # Reconstruction
+    try:
+        secret_text = secret_sharing.reconstruct(secret_id, collected_shares)
+        print(f"\n{'═' * 60}")
+        print(f"  🔓 SECRET RECONSTRUIT — '{label}'")
+        print(f"{'─' * 60}")
+        print(f"  {secret_text}")
+        print(f"{'═' * 60}")
+        print("\n⚠️  Mémorisez ce secret et fermez ce terminal pour effacer l'affichage.")
+    except Exception as e:
+        print(f"❌ Échec de la reconstruction : {e}")
+
 
 if __name__ == "__main__":
     #ac_setup()
