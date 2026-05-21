@@ -36,10 +36,10 @@ MENU_ITEMS = [
     ("E3", "Sauvegarder la base de données",        "logs.backup"),
     ("F1", "Voir mes précédents votes",             "votes.results.own"),
     ("F2", "Voter",                                 "votes.cast"),
-    ("F3", "Voir mes fragments secrets",            "secrets.view_own"),
-    ("G1", "Créer un secret partagé",               "secrets.split"),
-    ("G2", "Supprimer un secret",                   "secrets.delete"),
-    ("G3", "Reconstruire un secret",                "secrets.reconstruct"),
+    ("G1", "Voir mes fragments secrets",            "secrets.view_own"),
+    ("G2", "Créer un secret partagé",               "secrets.split"),
+    ("G3", "Supprimer un secret",                   "secrets.delete"),
+    ("G4", "Reconstruire un secret",                "secrets.reconstruct"),
 ]
 
 SECTION_LABELS = {
@@ -48,9 +48,101 @@ SECTION_LABELS = {
     "C": ("🗳️", "Votes"),
     "D": ("🧠",  "Sécurité & Outils"),
     "E": ("📦",  "Maintenance & Logs"),
-    "F": ("📩",  "Mes Votes & Fragments"),
+    "F": ("📩",  "Mes Votes"),
     "G": ("🔐",  "Secrets Partagés (SSS)"),
 }
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap première connexion (aucun badge associé)
+# ---------------------------------------------------------------------------
+
+def _first_connection_setup(user) -> None:
+    """
+    Guidage première connexion : crée le badge NFC et configure le TOTP.
+    Appelé uniquement si l'utilisateur n'a aucun badge actif.
+    Lève ValueError si l'utilisateur annule ou si la validation échoue.
+    """
+    print("\n" + "─" * 60)
+    print("  ⚠️   PREMIÈRE CONNEXION — Initialisation du compte")
+    print("─" * 60)
+    print("  Aucun badge NFC n'est associé à votre compte.")
+    print("  Suivez les étapes ci-dessous pour finaliser la configuration.\n")
+
+    # Étape 0 — Vérification de la clé Fernet TOTP (bootstrap circulaire)
+    import os
+    from dotenv import load_dotenv
+    _totp_env = os.path.join(os.path.dirname(__file__), '..', 'secrets', 'totp.env')
+    load_dotenv(_totp_env)
+    if not os.getenv("FERNET_TOTP_KEY"):
+        print("🔑 Étape 0 — Aucune clé de chiffrement TOTP détectée.")
+        print("   Une clé Fernet va être générée automatiquement dans aegis/secrets/totp.env.\n")
+        cli.fernet_key("totp.env")
+        load_dotenv(_totp_env, override=True)
+        print()
+
+    # Étape 1 — Génération du secret TOTP et affichage du QR code
+    import pyotp
+    secret = badges.generate_totp_secret()
+    totp   = pyotp.TOTP(secret)
+    uri    = totp.provisioning_uri(name=user.username, issuer_name="AEGIS")
+
+    print("📱 Étape 1 — Scannez ce QR code avec Google Authenticator :\n")
+    try:
+        import qrcode as _qr
+        qr = _qr.QRCode(border=1)
+        qr.add_data(uri)
+        qr.make(fit=True)
+        qr.print_ascii(invert=True)
+    except Exception:
+        pass
+    print(f"\n   Secret (saisie manuelle) : {secret}")
+    print(f"   URI                      : {uri}\n")
+
+    input("   Appuyez sur Entrée une fois le QR code enregistré dans l'appli...")
+
+    # Étape 2 — Scan du badge NFC
+    print("\n🪪  Étape 2 — Passez votre badge NFC devant le lecteur...")
+    header_id = None
+    for attempt in range(2):
+        try:
+            header_id = badges.get_header_id_from_nfc()
+            print("   ✅ Badge détecté.")
+            break
+        except RuntimeError as e:
+            print(f"   ❌ {e}")
+            if attempt == 0:
+                retry = input("   Réessayer ? (oui/non) : ").strip().lower()
+                if retry not in ("oui", "o", "yes", "y"):
+                    raise ValueError("Configuration annulée par l'utilisateur.")
+            else:
+                raise ValueError("Impossible de lire le badge. Configuration abandonnée.")
+
+    # Étape 3 — Création et rattachement du badge
+    try:
+        badge = badges.create_badge(user.username, secret, header_id)
+        badges.attach_badge_to_user(badge.badge_id, user.user_id)
+    except ValueError as e:
+        raise ValueError(f"Erreur lors de la création du badge : {e}")
+
+    # Étape 4 — Confirmation TOTP (réutilise verify_badge_and_totp pour cohérence)
+    print("\n🔐 Étape 3 — Confirmez la configuration avec un code Google Authenticator.")
+    for attempt in range(3):
+        code = input("   ➡️  Code TOTP : ").strip()
+        ok, err = badges.verify_badge_and_totp(user.user_id, header_id, code)
+        if ok:
+            print("   ✅ TOTP validé. Compte opérationnel !\n")
+            return
+        remaining = 2 - attempt
+        if remaining > 0:
+            print(f"   ❌ Code invalide — {remaining} tentative(s) restante(s).")
+
+    # Trop d'échecs : révoquer le badge pour forcer un nouveau setup
+    badges.edit_badge(badge.badge_id, {
+        "is_revoked":     True,
+        "revoked_reason": "Échec validation TOTP lors du premier setup",
+    })
+    raise ValueError("Code TOTP invalide 3 fois. Badge révoqué — recommencez la configuration.")
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +163,12 @@ def login() -> users.USERS:
         raise ValueError(f"L'utilisateur '{username}' n'a pas de rôle assigné.")
 
     print(f"\n👤 {user.first_name} {user.last_name} — rôle : {user.the_role}")
+
+    # Première connexion : aucun badge enregistré → setup guidé
+    if not badges.get_active_badge_for_user(user.user_id):
+        _first_connection_setup(user)
+        return user
+
     print("🔐 Authentification par badge NFC + TOTP requise.\n")
     print("➡️  Passez votre badge NFC devant le lecteur...")
 
@@ -342,10 +440,10 @@ def _dispatch(code: str, current_user) -> None:
         "E3": (cli.backup_db,                    "logs.backup"),
         "F1": (lambda: _my_votes(current_user),                             "votes.results.own"),
         "F2": (lambda: _cast_vote(current_user),                            "votes.cast"),
-        "F3": (lambda: cli.my_secret_shares(current_user),                  "secrets.view_own"),
-        "G1": (lambda: cli.create_secret_split(current_user),               "secrets.split"),
-        "G2": (lambda: cli.delete_secret(current_user),                     "secrets.delete"),
-        "G3": (lambda: cli.reconstruct_secret_interactive(current_user),    "secrets.reconstruct"),
+        "G1": (lambda: cli.my_secret_shares(current_user),                  "secrets.view_own"),
+        "G2": (lambda: cli.create_secret_split(current_user),               "secrets.split"),
+        "G3": (lambda: cli.delete_secret(current_user),                     "secrets.delete"),
+        "G4": (lambda: cli.reconstruct_secret_interactive(current_user),    "secrets.reconstruct"),
     }
 
     if code not in actions:

@@ -19,6 +19,7 @@ pyDes==2.0.1
 pyotp==2.9.0
 pyserial==3.5
 python-dotenv==1.2.2
+qrcode==8.2
 sqlacodegen==4.0.2
 SQLAlchemy==2.0.48
 sslib==0.2.0

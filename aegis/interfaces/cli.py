@@ -57,30 +57,52 @@ def create_user():
         print(f"Erreur lors de la récupération de l'utilisateur par son nom: {e}")
         return
 
-    print("➡️  Maintenant, nous allons configurer le badge NFC pour cet utilisateur.")
-    print("➡️  1 - Configuration du TOTP.")
+    # Configuration badge + TOTP
+    import pyotp
+    print("\n" + "─" * 60)
+    print("  🪪  Configuration du badge NFC et du TOTP")
+    print("─" * 60)
+
     secret = badges.generate_totp_secret()
-    print("➡️  Veuillez enregistrer ce secret dans votre application Google Authenticator :", secret)
-    print("➡️  Un badge TOTP va être créé et attaché à l'utilisateur.")
-    print("🚫   Ne partager ce secret à personne !")
-    print("➡️  2 - Scan du badge NFC.")
-    print("➡️  Veuillez scanner le badge NFC à l'aide du lecteur NFC...")
-    header_id = 0
-    while(header_id == 0):
+    totp   = pyotp.TOTP(secret)
+    uri    = totp.provisioning_uri(name=new_user.username, issuer_name="AEGIS")
+
+    print("\n📱 Étape 1 — L'utilisateur doit scanner ce QR code avec Google Authenticator :\n")
+    try:
+        import qrcode as _qr
+        qr = _qr.QRCode(border=1)
+        qr.add_data(uri)
+        qr.make(fit=True)
+        qr.print_ascii(invert=True)
+    except Exception:
+        pass
+    print(f"\n   Secret (saisie manuelle) : {secret}")
+    print(f"   URI                      : {uri}\n")
+    print("🚫  Ne pas partager ce secret — il est personnel à l'utilisateur.")
+
+    input("\n   Appuyez sur Entrée une fois le QR code enregistré dans l'appli...")
+
+    print("\n🪪  Étape 2 — Passez le badge NFC de l'utilisateur devant le lecteur...")
+    header_id = None
+    while not header_id:
         try:
             header_id = badges.get_header_id_from_nfc()
-            print(f"➡️  Badge NFC scanné avec succès. Header ID : {header_id}")
+            print("   ✅ Badge détecté.")
         except RuntimeError as e:
-            print(f"Erreur : {e}")
-            return
+            print(f"   ❌ {e}")
+            retry = input("   Réessayer ? (oui/non) : ").strip().lower()
+            if retry not in ("oui", "o", "yes", "y"):
+                print("   ⚠️  Configuration du badge annulée.")
+                return
+
     try:
         b = badges.create_badge(new_user.username, secret, header_id)
     except Exception as e:
-        print(f"Erreur lors de la création du badge : {e}")
+        print(f"   ❌ Erreur lors de la création du badge : {e}")
         return
 
     badges.attach_badge_to_user(b.badge_id, new_user.user_id)
-    print(f"✅ Badge créé avec l'ID {b.badge_id} et attaché à l'utilisateur '{new_user.username}'.")
+    print(f"\n✅ Badge #{b.badge_id} créé et attaché à '{new_user.username}'.")
     print("✅ Utilisateur et badge configurés avec succès !")
     
 

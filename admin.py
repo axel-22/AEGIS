@@ -63,9 +63,10 @@ def show_menu():
     print("  2 →  🗳️ Voter\n")
 
     print("🔐  Secrets Partagés (SSS) - G")
-    print("  1 →  ➕ Créer un secret partagé")
-    print("  2 →  🗑️  Supprimer un secret")
-    print("  3 →  🔓 Reconstruire un secret\n")
+    print("  1 →  🧾 Voir mes fragments secrets")
+    print("  2 →  ➕ Créer un secret partagé")
+    print("  3 →  🗑️  Supprimer un secret")
+    print("  4 →  🔓 Reconstruire un secret\n")
 
     print("❌  0 →  Quitter l’application\n")
 
@@ -77,7 +78,7 @@ def main():
         
         choice = input("➡️  Votre choix : ").strip()
         
-        while not (choice == "0" or (len(choice) == 2 and choice[0] in "ABCDEFG" and choice[1] in "123456")):
+        while not (choice == "0" or (len(choice) == 2 and choice[0] in "ABCDEFG" and choice[1] in "1234567")):
             print("⚠️  Choix invalide, veuillez réessayer.")
             choice = input("➡️  Votre choix (ex A1 pour lister les utilisteurs actifs) : ").strip() 
 
@@ -209,16 +210,21 @@ def main():
             input()
         #Section G - Secrets Partagés (SSS) — admin.py : pas de restriction RBAC
         elif choice[0] == "G" and choice[1] == "1":
+            print("\n🧾 Mes fragments secrets...\n")
+            c.my_secret_shares(_admin_user())
+            print("Enter pour continuer...")
+            input()
+        elif choice[0] == "G" and choice[1] == "2":
             print("\n🔐 Création d'un secret partagé...\n")
             c.create_secret_split(_admin_user())
             print("Enter pour continuer...")
             input()
-        elif choice[0] == "G" and choice[1] == "2":
+        elif choice[0] == "G" and choice[1] == "3":
             print("\n🗑️  Suppression d'un secret...\n")
             c.delete_secret(_admin_user())
             print("Enter pour continuer...")
             input()
-        elif choice[0] == "G" and choice[1] == "3":
+        elif choice[0] == "G" and choice[1] == "4":
             print("\n🔓 Reconstruction d'un secret...\n")
             c.reconstruct_secret_interactive(_admin_user())
             print("Enter pour continuer...")

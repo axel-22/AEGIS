@@ -186,6 +186,18 @@ def verify_badge_and_totp(user_id: int, header_id: str, totp_code: str) -> tuple
         session.close()
 
 
+def get_active_badge_for_user(user_id: int) -> BADGES | None:
+    """Retourne le badge actif d'un utilisateur, ou None s'il n'en a pas."""
+    session = db.get_session()
+    try:
+        return session.query(BADGES).filter(
+            BADGES.the_user   == user_id,
+            BADGES.is_revoked == False,
+        ).first()
+    finally:
+        session.close()
+
+
 def list_badges(is_revoked: bool) -> list[tuple[BADGES, str]]:
     try:
         badges = db.select_badges_by_revocation_status(is_revoked)

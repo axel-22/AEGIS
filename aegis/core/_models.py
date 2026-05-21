@@ -125,7 +125,7 @@ class ENVELOPES(Base):
 class SHARES(Base):
     __tablename__ = 'SHARES'
 
-    share_id: Mapped[Optional[int]] = mapped_column(Integer, primary_key=True)
+    share_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     the_secret: Mapped[Optional[int]] = mapped_column(ForeignKey('SECRETS.secret_id'))
     the_badge: Mapped[Optional[int]] = mapped_column(ForeignKey('BADGES.badge_id'))
     shamir_value: Mapped[Optional[str]] = mapped_column(String(50))

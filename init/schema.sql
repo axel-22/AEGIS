@@ -114,6 +114,3 @@ CREATE TABLE SHARES (
 
 INSERT INTO USERS (username, first_name, last_name, email, job, the_role) VALUES
 ('admin', 'Admin', 'Admin', 'admin@aegis.com', 'Admin', 'superadmin');
-
-INSERT INTO USERS (username, first_name, last_name, email, job, the_role) VALUES
-('default', 'Default', 'User', 'default@aegis.com', 'User', 'member');

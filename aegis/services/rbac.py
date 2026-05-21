@@ -10,16 +10,16 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "users.create", "users.list", "users.edit", "users.delete",
         "badges.list", "badges.revoke",
         "votes.create", "votes.manage", "votes.assign", "votes.close",
-        "votes.cast", "votes.results.all", "votes.results.own", "votes.audit",
+        "votes.results.all", "votes.results.own", "votes.audit",
         "logs.view", "logs.export", "logs.backup",
         "keys.generate",
         "secrets.split", "secrets.view_own", "secrets.delete", "secrets.reconstruct",
     }),
     # Gestion des logs, consultation utilisateurs/badges/résultats, gestion secrets
     "admin": frozenset({
-        "users.list",
+        "users.list", "users.create", "users.edit", "users.delete",
         "badges.list", "badges.revoke",
-        "votes.results.all", "votes.results.own",
+        "votes.cast", "votes.results.all", "votes.results.own",
         "logs.view", "logs.export", "logs.backup",
         "secrets.split", "secrets.view_own", "secrets.delete", "secrets.reconstruct",
     }),
@@ -27,7 +27,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "manager": frozenset({
         "users.list",
         "votes.create", "votes.manage", "votes.assign", "votes.close",
-        "votes.results.own",
+        "votes.cast", "votes.results.own",
         "secrets.view_own",
     }),
     # Vote + consultation de ses propres votes + dépositaire de fragments
@@ -38,7 +38,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     }),
     # Consultation de tous les résultats + audit + dépositaire de fragments
     "auditor": frozenset({
-        "votes.results.all",
+        "votes.cast", "votes.results.all",
         "votes.results.own",
         "votes.audit",
         "secrets.view_own",
