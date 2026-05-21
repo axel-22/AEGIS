@@ -3,18 +3,34 @@
 # Users Service - Manage all user-related operations
 
 import re
+from datetime import datetime
 
 import aegis.core._database as db
-from aegis.core._models import USERS
+from aegis.core._models import USERS, BADGES, SECRETS, ENVELOPES
+from aegis.core._logger import get_logger
+from aegis.core._config import SQLALCHEMY_DEBUG
 
-MAX_LEN_USERNAME = 50
+log = get_logger("users")
 
-db.set_debug(False)
+MAX_LEN = 50
 
-def is_valid_email(email: str, username: str) -> bool:
+db.set_debug(SQLALCHEMY_DEBUG)
+
+def is_valid_email(email: str) -> bool:
     """Vérifie si l'email est dans un format valide."""
     pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
-    if(re.match(pattern, email) and len(username) <= MAX_LEN_USERNAME):
+    if(re.match(pattern, email) and len(email) <= MAX_LEN):
+        return True
+    return False
+
+def is_valid_username(username: str) -> bool:
+    """
+    Vérifie si le nom d'utilisateur est valide :
+    - Contient uniquement lettres (accentuées), chiffres, underscores et points
+    - Pas d'espaces ou autres caractères spéciaux
+    """
+    pattern = r"^[A-Za-z0-9_.À-ÖØ-öø-ÿ]+$"
+    if(re.match(pattern, username) and len(username) <= MAX_LEN):
         return True
     return False
 
@@ -25,7 +41,7 @@ def is_valid_name(name: str) -> bool:
     - Pas d'espaces, chiffres ou autres caractères spéciaux
     """
     pattern = r"^[A-Za-zÀ-ÖØ-öø-ÿ'’-]+$"
-    if(re.match(pattern, name) and len(name) <= MAX_LEN_USERNAME):
+    if(re.match(pattern, name) and len(name) <= MAX_LEN):
         return True
     return False
         
@@ -42,34 +58,60 @@ def create_user(user_data: dict) -> 'USERS':
     
     email = user_data.get("email")
     username = user_data.get("username")
-    if email and not is_valid_email(email, username):
+    if email and not is_valid_email(email):
         raise ValueError("Format d'email invalide.")
 
     the_username = db.select_user_by_username(user_data.get("username"))
     if the_username:
         raise ValueError("Nom d'utilisateur déjà existant. Veuillez en choisir un autre.")
 
+    if verify_username := is_valid_username(username) == False:
+        raise ValueError("Nom d'utilisateur invalide. Utilisez uniquement des lettres, chiffres, underscores et points.")   
+    
+    if user_data.get("the_role") not in ["superadmin", "admin", "member", "manager", "auditor"]:
+        raise ValueError("Rôle utilisateur invalide. Choisissez parmi : superadmin, admin, member.")
+        
     new_user = USERS(
             first_name=user_data["first_name"],
             last_name=user_data["last_name"],
             username=user_data["username"],
             email=user_data["email"],
-            can_vote=user_data["can_vote"],
             job=user_data["job"],
             the_role=user_data["the_role"]
         )
     try:
         db.insert_user(new_user)
     except Exception as e:
+        log.error(f"Insertion de l'utilisateur '{user_data.get('username')}' échouée : {e}")
         raise e
+    log.info(f"Utilisateur créé — username='{new_user.username}' role='{new_user.the_role}'")
     return new_user
 
-def list_users(is_revoked: bool) -> list['USERS']:
+def list_users(is_revoked: bool) -> list[tuple['USERS', int]]:
     """Lister les utilisateurs actifs ou révoqués."""
     try:
         users_list = db.select_users(is_revoked)
     except Exception as e:
         raise e
+    return users_list
+
+def list_all_users() -> list[tuple['USERS', int]]:
+    """Lister les utilisateurs actifs ou révoqués."""
+    try:
+        users_list = db.select_all_users()
+    except Exception as e:
+        raise e
+    return users_list
+
+def list_users_with_ids(user_ids) -> list[tuple['USERS', int]]:
+    """Lister les utilisateurs avec leurs IDs."""
+    if all(isinstance(x, int) for x in user_ids):
+        try:
+            users_list = db.select_users_with_ids(user_ids)
+        except Exception as e:
+            raise e
+    else:
+        raise ValueError("La liste des IDs doit contenir uniquement des entiers.")
     return users_list
 
 def get_user_by_username(username: str) -> 'USERS':
@@ -80,6 +122,77 @@ def get_user_by_username(username: str) -> 'USERS':
         raise e
     return user
 
+def get_user_by_id(user_id: int) -> 'USERS':
+    """Récupérer un utilisateur par son ID."""
+    try:
+        user = db.select_user_by_id(user_id)
+    except Exception as e:
+        raise e
+    return user
+
+def edit_user(user_id: int, user_data: dict) -> 'USERS':
+    """Éditer un utilisateur existant."""
+    firstname = user_data.get("first_name").capitalize()
+    if not firstname or not is_valid_name(firstname):
+        raise ValueError("Prénom invalide. Utilisez uniquement des lettres, apostrophes et tirets.")
+        
+    lastname = user_data.get("last_name").capitalize()
+    if not lastname or not is_valid_name(lastname):
+        raise ValueError("Nom de famille invalide. Utilisez uniquement des lettres, apostrophes et tirets.")
+    
+    email = user_data.get("email")
+    username = user_data.get("username")
+    if email and not is_valid_email(email, username):
+        raise ValueError("Format d'email invalide.")
+
+    try:
+        updated_user = db.update_user(user_id, user_data)
+    except Exception as e:
+        log.error(f"Mise à jour user_id={user_id} échouée : {e}")
+        raise e
+    log.info(f"Utilisateur user_id={user_id} modifié — champs : {list(user_data.keys())}")
+    return updated_user
+
+def remove_user(user_id: int) -> None:
+    """Supprimer un utilisateur en anonymisant ses données et en révoquant son badge."""
+    session = db.get_session()
+
+    user = db.select_user_with_badge_by_user_id(user_id,session=session)
+    uid = user.user_id
+    if not user:
+        raise ValueError(f"Utilisateur {user_id} non trouvé")
+
+    # Révoquer le badge s'il existe
+    if user.BADGES:
+        badge = user.BADGES
+        badge.is_revoked = True
+        badge.revoked_at = datetime.utcnow()
+        badge.revoked_reason = "USER_DELETED"
+
+    try:
+        user.username = f"deleted_user_{user.user_id}"
+        user.first_name = "Deleted"
+        user.last_name = "User"
+        user.email = None
+        user.job = None
+        user.the_role = None
+        user.updated_at = datetime.utcnow()
+
+        session.commit()
+        log.info(f"Utilisateur user_id={uid} anonymisé et révoqué")
+    except Exception as e:
+        session.rollback()
+        log.error(f"Suppression user_id={uid} échouée : {e}")
+        raise Exception(f"Erreur lors de la suppression de l'utilisateur : {e}")
+    finally:
+        session.close()
+    try:
+        db.delete_secrets(uid)
+        db.delete_envelopes(uid)
+    except Exception as e:
+        log.error(f"Suppression données associées user_id={uid} échouée : {e}")
+        raise Exception(f"Erreur lors de la suppression des données associées : {e}")
+    
 
 if __name__ == "__main__":
     test_user =  {

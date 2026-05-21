@@ -4,15 +4,18 @@
 
 import sqlite3
 from pathlib import Path
+from datetime import datetime
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import joinedload
+from sqlalchemy import or_, and_
 
-from aegis.core._models import Base, USERS, BADGES
+from aegis.core._models import Base, USERS, BADGES, SECRETS, ENVELOPES
+
 
 
 DB_PATH = Path("aegis.db")
-
 
 DEBUG = False  # valeur par défaut
 SessionLocal = None
@@ -26,6 +29,18 @@ def set_debug(state: bool):
     if DEBUG:
         print(f"🔧 SQLAlchemy debug mode = {DEBUG}")
 
+def init_db():
+    """
+    Crée les tables à partir des modèles SQLAlchemy.
+    """
+    if engine is None:
+        raise RuntimeError("Engine non initialisé. Appelle init_engine() avant init_db().")
+
+    Base.metadata.create_all(bind=engine)
+
+    if DEBUG:
+        print("🗄️  Base de données SQLite initialisée")
+
 def get_session():
     """Renvoie une nouvelle session SQLAlchemy."""
     return SessionLocal()
@@ -34,11 +49,6 @@ def get_session():
 def get_sqlite3_conn():
     conn = sqlite3.connect(DB_PATH)
     return conn
-
-# Connexion SQLAlchemy
-def init_db():
-    Base.metadata.create_all(bind=engine)
-    print("Base de données initialisée avec SQLAlchemy.")
 
 def raw_query_with_sqlite3():
     conn = get_sqlite3_conn()
@@ -75,23 +85,54 @@ def insert_user(user: 'USERS' ) -> 'USERS':
     finally:
         session.close()
 
-    
-
-
-def select_users(is_revoked: bool) -> list['USERS']:
-    """Lister les utilisateurs actifs ou révoqués."""
+def select_users(is_revoked: bool) -> list[tuple['USERS', int]]:
+    """
+    Lister les utilisateurs avec l'id de leur badge
+    (révoqué ou actif selon is_revoked)
+    """
     session = get_session()
     try:
-        if is_revoked:
-            users = session.query(USERS).filter(USERS.can_vote == False ).all()
-        else:
-            users = session.query(USERS).filter(USERS.can_vote == True).all()
-        return users
+        results = (
+            session.query(USERS, BADGES.badge_id)
+            .join(BADGES, BADGES.the_user == USERS.user_id)
+            .filter(BADGES.is_revoked == is_revoked)
+            .all()
+        )
+        return results
+    except Exception:
+        raise
+    finally:
+        session.close()
+
+def select_all_users() -> list[tuple['USERS', int]]:
+    """
+    Lister tous les utilisateurs avec leurs badges associés
+    """
+    session = get_session()
+    try:
+        results = (
+            session.query(USERS, BADGES.badge_id)
+            .outerjoin(BADGES, BADGES.the_user == USERS.user_id)
+            .all()
+        )
+        return results
     except Exception as e:
         raise e
     finally:
         session.close()
 
+def select_users_with_ids(user_ids) -> list[tuple['USERS', int]]:
+    """
+    Lister les utilisateurs qui correspondent à une liste d'IDs sans leur badge
+    """  
+    session = get_session()
+    try:
+        user = session.query(USERS).filter(USERS.user_id.in_(user_ids)).all()
+        return user
+    except Exception as e:
+        raise e
+    finally:        
+        session.close()
 
 def select_user_by_username(username: str) -> 'USERS':
     """Récupérer un utilisateur par son nom d'utilisateur."""
@@ -104,6 +145,141 @@ def select_user_by_username(username: str) -> 'USERS':
     finally:
         session.close()
 
+def select_user_by_id(user_id: int) -> 'USERS':
+    """Récupérer un utilisateur par son ID."""
+    session = get_session()
+    try:
+        user = session.query(USERS).filter(USERS.user_id == user_id).first()
+        return user
+    except Exception as e:
+        raise e
+    finally:
+        session.close()
+
+def drop_user(user_id: int):
+    session = get_session()
+    try:
+        user = session.get(USERS, user_id)
+        if user:
+            session.delete(user)
+            session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+def select_all_badges() -> list[tuple[BADGES, str]]:
+    session = get_session()
+    try:
+        results = (
+            session
+            .query(BADGES, USERS.username)
+            .join(USERS, BADGES.the_user == USERS.user_id)
+            .all()
+        )
+        return results
+
+    except Exception as e:
+        session.rollback()
+        raise e
+
+def select_badge_by_id(badge_id: int) -> 'BADGES':
+    session = get_session()
+    try:
+        badge = session.get(BADGES, badge_id)
+        return badge
+    except Exception as e:
+        raise e
+    finally:
+        session.close()
+
+def select_badges_by_revocation_status(is_revoked: bool) -> list[tuple[BADGES, str]]:
+    session = get_session()
+    now = datetime.utcnow()
+    try:
+        if is_revoked:
+            # Badges révoqués OU expirés
+            results = (
+                session
+                .query(BADGES, USERS.username)
+                .join(USERS, BADGES.the_user == USERS.user_id)
+                .filter(
+                    or_(
+                        BADGES.is_revoked.is_(True),
+                        and_(
+                            BADGES.expires_at.isnot(None),
+                            BADGES.expires_at <= now
+                        )
+                    )
+                )
+                .all()
+            )
+        else:
+            # Badges actifs
+            results = (
+                session
+                .query(BADGES, USERS.username)
+                .join(USERS, BADGES.the_user == USERS.user_id)
+                .filter(
+                    and_(
+                        BADGES.is_revoked.is_(False),
+                        or_(
+                            BADGES.expires_at.is_(None),
+                            BADGES.expires_at > now
+                        )
+                    )
+                )
+                .all()
+            )
+        return results
+
+    except Exception as e:
+        session.rollback()
+        raise e
+
+def select_user_with_badge_by_user_id(user_id: int, session=None) -> 'USERS':
+    close_session = False
+    if session is None:
+        session = get_session()
+        close_session = True
+    try:
+        user = session.query(USERS).options(joinedload(USERS.BADGES)).filter(USERS.user_id == user_id).one_or_none()
+        return user
+    finally:
+        if close_session:
+            session.close()
+def update_user(user_id: int, user_data: dict) -> 'USERS':
+    """Éditer un utilisateur existant."""
+    session = get_session()
+    try:
+        user = session.get(USERS, user_id)
+        for key, value in user_data.items():
+            setattr(user, key, value)
+        session.commit()
+        session.refresh(user)
+        return user
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
+
+def delete_secrets(user_id: int):
+    session = get_session()
+    try:
+        session.query(SECRETS).filter(SECRETS.creator_user_id == user_id).delete(synchronize_session=False)
+        session.commit()
+    finally:
+        session.close()
+
+def delete_envelopes(user_id: int):
+    session = get_session()
+    try:
+        session.query(ENVELOPES).filter(ENVELOPES.the_user == user_id).delete(synchronize_session=False)
+        session.commit()
+    finally:
+        session.close()
 
 def insert_badge(badge: 'BADGES') -> 'BADGES':
     session = get_session()
@@ -118,22 +294,31 @@ def insert_badge(badge: 'BADGES') -> 'BADGES':
     finally:
         session.close()
 
-def assign_badge_to_user(badge_id, user_id):
+def assign_badge_to_user(badge_id: int, user_id: int):
     session = get_session()
     try:
         badge = session.get(BADGES, badge_id)
-        badge.owner_id = user_id
+        badge.the_user = user_id
         session.commit()
     except:
         session.rollback()
-        raise
+        raise RuntimeError("Erreur lors de l'assignation du badge à l'utilisateur.")
     finally:
         session.close()
 
-
+def select_badge_by_header_id(header_hash: str) -> 'BADGES':
+    session = get_session()
+    try:
+        badge = session.query(BADGES).filter(BADGES.header_id == header_hash).first()
+        return badge
+    except Exception as e:
+        raise e
+    finally:
+        session.close()
 
 if __name__ == "__main__":
     # Initialisation DB via SQLAlchemy
+    set_debug(True)
     init_db()
 
     # Test requête sqlite3 native

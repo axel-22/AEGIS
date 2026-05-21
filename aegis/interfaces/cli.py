@@ -2,44 +2,54 @@
 # Last modified: 2025-27-10
 # CLI Interface - Command Line Interface for AEGIS Application
 
-from aegis.services import users, badges, ac
+import os
+from pathlib import Path
+from datetime import datetime
+from datetime import date
+import re
+
+from aegis.services import users, badges, votes, utils, maintenance, secret_sharing
+from aegis.core._logger import read_recent_logs
 
 def create_user():
     """Interface CLI pour créer un nouvel utilisateur."""
-    name = input("➡️  Prénom : ").strip().lower()
-    nom = input("➡️  Nom de famille : ").strip().lower()
-    username = input("➡️  Nom d'utilisateur : ").strip().lower()
-    email = input("➡️  Email : ").strip().lower()
-    vote_input = input("➡️  Peut voter ? (oui/non) (par défaut) oui : ").strip().lower()
-    metier = input("➡️  Métier (par défaut) développeur: ").strip().lower()
-    role = input("➡️  Rôle : (par défaut) membre : ").strip().lower()
+    print("\n👤 Création d’un nouvel utilisateur...\n")
+    user = None
+    user_data = {}
+    while True:
+        name = input("➡️  Prénom : ").strip().lower()
+        nom = input("➡️  Nom de famille : ").strip().lower()
+        username = input("➡️  Nom d'utilisateur : ").strip().lower()
+        email = input("➡️  Email : ").strip().lower()
+        metier = input("➡️  Métier (par défaut) développeur: ").strip().lower()
+        role = input("➡️  Rôle : (par défaut) membre : ").strip().lower()
 
-    user_data = {
-        "first_name": name,
-        "last_name": nom,
-        "username": username,
-        "email": email,
-        "can_vote": vote_input != "non",
-        "job": metier if metier else "développeur",
-        "the_role": role if role else "membre"
-    }
-  
-    try:
-        user = users.create_user(user_data)
-        #print(f"Utilisateur créé avec l'ID {user.user_id}")
-        print("✅"+"═" * 25 +f"Utilisateur '{user.username}' créé avec succès !\n"+"═" * 25)
-        print("🪪 Récapitulation des informations ajoutées")
-        print(f"  - Prénom : {user.first_name}")
-        print(f"  - Nom de famille : {user.last_name}")
-        print(f"  - Nom d'utilisateur : {user.username}")
-        print(f"  - Email : {user.email}")
-        print(f"  - Peut voter : {user.can_vote}")
-        print(f"  - Métier : {user.job}")
-        print(f"  - Rôle : {user.the_role}\n")
-    except ValueError as e:
-        print(f"Erreur de validation : {e}")
-    except Exception as e:
-        print(f"Erreur lors de la création : {e}")
+        user_data = {
+            "first_name": name,
+            "last_name": nom,
+            "username": username,
+            "email": email,
+            "job": metier if metier else "développeur",
+            "the_role": role if role else "member"
+        }
+    
+        try:
+            user = users.create_user(user_data)
+            #print(f"Utilisateur créé avec l'ID {user.user_id}")
+            print("✅"+"═" * 25 +f"Utilisateur '{user.username}' créé avec succès !\n"+"═" * 25)
+            print("🪪 Récapitulation des informations ajoutées")
+            print(f"  - Prénom : {user.first_name}")
+            print(f"  - Nom de famille : {user.last_name}")
+            print(f"  - Nom d'utilisateur : {user.username}")
+            print(f"  - Email : {user.email}")
+            print(f"  - Métier : {user.job}")
+            print(f"  - Rôle : {user.the_role}\n")
+            break
+        except ValueError as e:
+            print(f"Erreur de validation : {e}")
+        except Exception as e:
+            print(f"Erreur lors de la création : {e}")
+            break
 
     try:
         new_user = users.get_user_by_username(user_data.get("username"))
@@ -47,75 +57,1085 @@ def create_user():
         print(f"Erreur lors de la récupération de l'utilisateur par son nom: {e}")
         return
 
-    yes_no = "oui"
+    # Configuration badge + TOTP
+    import pyotp
+    print("\n" + "─" * 60)
+    print("  🪪  Configuration du badge NFC et du TOTP")
+    print("─" * 60)
+
+    secret = badges.generate_totp_secret()
+    totp   = pyotp.TOTP(secret)
+    uri    = totp.provisioning_uri(name=new_user.username, issuer_name="AEGIS")
+
+    print("\n📱 Étape 1 — L'utilisateur doit scanner ce QR code avec Google Authenticator :\n")
+    try:
+        import qrcode as _qr
+        qr = _qr.QRCode(border=1)
+        qr.add_data(uri)
+        qr.make(fit=True)
+        qr.print_ascii(invert=True)
+    except Exception:
+        pass
+    print(f"\n   Secret (saisie manuelle) : {secret}")
+    print(f"   URI                      : {uri}\n")
+    print("🚫  Ne pas partager ce secret — il est personnel à l'utilisateur.")
+
+    input("\n   Appuyez sur Entrée une fois le QR code enregistré dans l'appli...")
+
+    print("\n🪪  Étape 2 — Passez le badge NFC de l'utilisateur devant le lecteur...")
+    header_id = None
+    while not header_id:
+        try:
+            header_id = badges.get_header_id_from_nfc()
+            print("   ✅ Badge détecté.")
+        except RuntimeError as e:
+            print(f"   ❌ {e}")
+            retry = input("   Réessayer ? (oui/non) : ").strip().lower()
+            if retry not in ("oui", "o", "yes", "y"):
+                print("   ⚠️  Configuration du badge annulée.")
+                return
 
     try:
-        exist = badges.is_keys_existing(new_user.username)
-        if not exist:
-            pass
-    except FileExistsError as e:
-        print(f"/!\ Warning les clés pour {new_user.username} existe déja, souhaitez vous les renouvelers : {e}")
-        yes_no = input("➡️  Entrée 'oui' pour renouveler les clés, ou 'non' pour quitter : ").strip().lower()      
-        while yes_no not in ["oui", "non"]:
-            print("❌ Entrée invalide. Veuillez répondre par 'oui' ou 'non'.")
-            yes_no = input("➡️  Entrée 'oui' pour renouveler les clés, ou 'non' pour quitter : ").strip().lower()
+        b = badges.create_badge(new_user.username, secret, header_id)
+    except Exception as e:
+        print(f"   ❌ Erreur lors de la création du badge : {e}")
+        return
+
+    badges.attach_badge_to_user(b.badge_id, new_user.user_id)
+    print(f"\n✅ Badge #{b.badge_id} créé et attaché à '{new_user.username}'.")
+    print("✅ Utilisateur et badge configurés avec succès !")
     
-    if yes_no == "oui":
-        secret = badges.generate_totp_secret()
-        print("➡️  Veuillez enregistrer ce secret dans votre application Google Authenticator :", secret)
-        print("➡️  Un badge TOTP va être créé et attaché à l'utilisateur.")
-        print("🚫   Ne partager ce secret à personne !")
-        ac_passphrase = input("➡️  Entrée la passphrase de l'AC pour signer le badge : ").strip()
-        try:
-            b = badges.create_badge(new_user.username, secret, ac_passphrase)
-        except Exception as e:
-            print(f"Erreur lors de la création du badge : {e}")
-            return
-        
-        badges.attach_badge_to_user(b.badge_id, new_user.user_id)
+
+def list_all_users():
+    """Interface CLI pour lister les utilisateurs."""
+    allusers = users.list_all_users()
+    print(f"\n📋 Liste de tous les utilisateurs:\n")
+    print("    - ID, Username, Name, Email, Job, Role, Badge ID")
+    for user in allusers:
+        print(f"    - {user[0].user_id}, {user[0].username}, {user[0].first_name}, {user[0].last_name}, {user[0].email}, {user[0].job}, {user[0].the_role}, {user[1]}")
+
+    print("\n👤"+"═" * 30 +f" Total: {len(allusers)} utilisateurs dans la base "+"═" * 30)
 
 def list_users(is_revoked: bool):
     """Interface CLI pour lister les utilisateurs."""
     allusers = users.list_users(is_revoked)
     status = "révoqués" if is_revoked else "actifs"
-    print(f"\n📋 Liste des utilisateurs {status} :\n")
+    emoji = "🚫" if is_revoked else "✅"
+    print(f"\n {emoji} Liste des utilisateurs {status} :\n")
+    print("  - ID, Username, Name, Email, Job, Role, Badge ID")
     for user in allusers:
-        print(f"  - ID: {user.user_id}, Username: {user.username}, Name: {user.first_name} {user.last_name}, Email: {user.email}, Can Vote: {user.can_vote}, Job: {user.job}, Role: {user.the_role}")
+        print(f"    - {user[0].user_id}, {user[0].username}, {user[0].first_name}, {user[0].last_name}, {user[0].email}, {user[0].job}, {user[0].the_role}, {user[1]}")
 
     print("\n👤"+"═" * 30 +f" Total: {len(allusers)} utilisateurs {status} dans la base "+"═" * 30)
 
-
-def ac_setup():
-    """Interface CLI pour configurer le service AC."""
-    print("⚙️  Configuration du service AC")
-    yes_no = "oui"
+def list_users_with_ids(user_ids: list[int]):
+    """Interface CLI pour lister les utilisateurs avec leurs IDs."""
     try:
-        exist = ac.is_ac_keys_existing()
-        if not exist:
-            pass
-    except FileExistsError as e:
-        print(f"/!\ Warning les clés Maitres existe déja, souhaitez vous les renouvelers : {e}")
-        yes_no = input("➡️  Entrée 'oui' pour renouveler les clés, ou 'non' pour quitter : ").strip().lower()      
-        while yes_no not in ["oui", "non"]:
-            print("❌ Entrée invalide. Veuillez répondre par 'oui' ou 'non'.")
-            yes_no = input("➡️  Entrée 'oui' pour renouveler les clés, ou 'non' pour quitter : ").strip().lower()
+        allusers = users.list_users_with_ids(user_ids)
+    except ValueError as e:
+        print(f"Erreur de validation : {e}")
+        return
+    print(f"\n📋 Liste des utilisateurs sélectionnés :\n")
+    print("  - ID, Username, Name, Email, Job, Role")
+    for user in allusers:
+        print(f"    - {user.user_id}, {user.username}, {user.first_name}, {user.last_name}, {user.email}, {user.job}, {user.the_role}")
+
+def edit_user():
+    """Interface CLI pour éditer un utilisateur."""
+    list_all_users()
+    username = input("➡️  Entrez le nom d'utilisateur de l'utilisateur à éditer : ").strip().lower()
+    try:
+        user = users.get_user_by_username(username)
+        if not user:
+            print(f"❌ Utilisateur '{username}' non trouvé.")
+            return
+    except Exception as e:
+        print(f"Erreur lors de la récupération de l'utilisateur : {e}")
+        return
+
+    print(f"\n✏️  Édition de l'utilisateur '{username}'. Laissez vide pour conserver la valeur actuelle.\n")
+    new_first_name = input(f"➡️  Prénom ({user.first_name}) : ").strip()
+    new_last_name = input(f"➡️  Nom de famille ({user.last_name}) : ").strip()
+    new_email = input(f"➡️  Email ({user.email}) : ").strip()
+    new_job = input(f"➡️  Métier ({user.job}) : ").strip()
+    new_role = input(f"➡️  Rôle ({user.the_role}) : ").strip()
+
+    user_data = {
+        "first_name": new_first_name if new_first_name else user.first_name,
+        "last_name": new_last_name if new_last_name else user.last_name,
+        "username": user.username,
+        "email": new_email if new_email else user.email,
+        "job": new_job if new_job else user.job,
+        "the_role": new_role if new_role else user.the_role
+    }
+
+    try:
+        updated_user = users.edit_user(user.user_id, user_data)
+        print(f"✅ Utilisateur '{updated_user.username}' mis à jour avec succès !")
+    except ValueError as e:
+        print(f"Erreur de validation : {e}")
+    except Exception as e:
+        print(f"Erreur lors de la mise à jour : {e}")
+
+def remove_user():
+    """Interface CLI pour supprimer un utilisateur."""
+    list_all_users()
+    username = input("➡️  Entrez le nom d'utilisateur de l'utilisateur à supprimer : ").strip().lower()
+    try:
+        user = users.get_user_by_username(username)
+        if not user:
+            print(f"❌ Utilisateur '{username}' non trouvé.")
+            return
+    except Exception as e:
+        print(f"Erreur lors de la récupération de l'utilisateur : {e}")
+        return
+
+    confirm = input(f"⚠️  Êtes-vous sûr de vouloir supprimer l'utilisateur '{username}' ? Cette action est irréversible. (oui/non) : ").strip().lower()
+    if confirm not in ('oui', 'o', 'yes', 'y'):
+        print("Abandon de la suppression de l'utilisateur.")
+        return
+
+    try:
+        users.remove_user(user.user_id)
+        print(f"✅ Utilisateur '{username}' supprimé avec succès !")
+    except Exception as e:
+        print(f"Erreur lors de la suppression de l'utilisateur : {e}")
+
+def list_all_badges():
+    """Interface CLI pour lister tous les badges."""
+    allbadges = badges.list_all_badges()
+    print(f"\n📋 Liste de tous les badges:\n")
+    print("  - Badge ID, Username, Hash, Issued At, Expires At, Is Revoked, Reason, Updated At")
+    for badge, username in allbadges:
+        print(f"    - {badge.badge_id}, {username}, {badge.header_id}, {badge.issued_at}, {badge.expires_at}, {badge.is_revoked}, {badge.revoked_reason}, {badge.updated_at}")
+
+    print("\n🪪"+"═" * 30 +f" Total: {len(allbadges)} badges dans la base "+"═" * 30)
+
+def list_badges(is_revoked: bool):
+    """Interface CLI pour lister les badges."""
+    allbadges = badges.list_badges(is_revoked)
+    status = "révoqués" if is_revoked else "actifs"
+    emoji = "🚫" if is_revoked else "✅"
+    print(f"\n {emoji} Liste des badges {status} :\n")
+    print("  - Badge ID, Username, Hash, Issued At, Expires At, Is Revoked, Reason, Updated At")
+    for badge, username in allbadges:
+        print(f"    - {badge.badge_id}, {username}, {badge.header_id}, {badge.issued_at}, {badge.expires_at}, {badge.is_revoked}, {badge.revoked_reason}, {badge.updated_at}")
+
+    print("\n🪪"+"═" * 30 +f" Total: {len(allbadges)} badges {status} dans la base "+"═" * 30)
+
+def edit_badge():
+    """Interface CLI pour éditer un badge."""
+    list_all_badges()
+    badge_id_input = input("➡️  Entrez l'ID du badge à éditer : ").strip()
+    badge_id = None
+    while badge_id is None:
+        try:
+            badge_id = int(badge_id_input)
+        except ValueError:
+            print("❌ ID de badge invalide.")
+            return
+    try:
+        badge = badges.get_badge_by_id(badge_id)
+        if not badge:
+            print(f"❌ Badge avec l'ID '{badge_id}' non trouvé.")
+            return
+    except Exception as e:
+        print(f"Erreur lors de la récupération du badge : {e}")
+        return
+
+    print(f"\n✏️  Édition du badge ID '{badge_id}'. Laissez vide pour conserver la valeur actuelle.\n")
+    new_expires_at = input(f"➡️  Date d'expiration ({badge.expires_at}) [format YYYY-MM-DD] : ").strip()
+    new_is_revoked = input(f"➡️  Est révoqué ({badge.is_revoked}) [oui/non] : ").strip().lower()
+    new_revoked_reason = input(f"➡️  Raison de révocation ({badge.revoked_reason}) : ").strip()
+
+    badge_data = {}
+    if new_expires_at:
+        badge_data["expires_at"] = new_expires_at
+    if new_is_revoked in ('oui', 'o', 'yes', 'y'):
+        badge_data["is_revoked"] = True
+    elif new_is_revoked in ('non', 'n', 'no'):
+        badge_data["is_revoked"] = False
+    if new_revoked_reason:
+        badge_data["revoked_reason"] = new_revoked_reason
+
+    try:
+        updated_badge = badges.edit_badge(badge.badge_id, badge_data)
+        print(f"✅ Badge ID '{updated_badge.badge_id}' mis à jour avec succès !")
+    except ValueError as e:
+        print(f"Erreur de validation : {e}")
+    except Exception as e:
+        print(f"Erreur lors de la mise à jour : {e}")
+
+
+def create_vote():
+    import re
+    from datetime import date
     
-    if yes_no == "oui":
-        print("/!\ Veuillez garder cette passphrase en sécurité et la mémoriser! sinon les données perdu /!\ ")
-        passphrase = input("➡️  Entrée la passphrase  : ").strip()
-        verify_passphrase = input("➡️  Entrée de nouveaux la passphrase : ").strip()
-        while passphrase != verify_passphrase:
-            print("❌ Les passphrases ne correspondent pas. Veuillez réessayer.")
-            passphrase = input("➡️  Entrée la passphrase  : ").strip()
-            verify_passphrase = input("➡️  Entrée de nouveaux la passphrase : ").strip()
+    while True:
+        question = input("➡️ Question du vote : ").strip()
+        description = input("➡️ Description (optionnel) : ").strip() or None
+        vote_type = input("➡️ Type de vote (majorité / unanimité / minimum_requis) : ").strip()
+        vote_mode = input("➡️ Mode de vote (auditable / confidentiel) : ").strip()
+        k_required = None
+        boolean = input("➡️ Est-ce que le vote est une question fermée ? (oui/non) : ").strip().lower() 
+        is_boolean = boolean in ('oui', 'o', 'yes', 'y')
+    
+        if vote_type == "minimum_requis":
+            try:
+                k_required = int(input("➡️ k requis : "))
+            except ValueError:
+                print("⚠️ k requis doit être un nombre entier.")
+                continue
+    
+        date_entry = ""
+        regex = re.compile(r'^[0-9]{2}/[0-9]{2}/[0-9]{4}$')
+        while not re.findall(regex, date_entry):
+            date_entry = input("➡️ Enter une date d'expiration au format JJ/MM/AAAA (ex 27/04/2020): ").strip()
+        day, month, year = map(int, date_entry.split('/'))
+        try:
+            expiration_date = date(year, month, day)
+        except ValueError:
+            print("⚠️ Date invalide. Veuillez recommencer.")
+            continue
 
-        ac.generate_ac_keys(passphrase)    
-
-        print("[AC] Generated new AC keypair and saved to disk.")
+        if boolean == "oui":
+          is_boolean = True
+        elif boolean == "non":
+          is_boolean = False
+        else:          
+            print("⚠️ Choix invalide pour la question fermée. Veuillez répondre par oui ou non.")    
+    
+        vote_data = {
+            "question": question,
+            "description_text": description,
+            "is_boolean": is_boolean,
+            "creator_user_id": None,
+            "vote_type": vote_type,
+            "vote_mode": vote_mode,
+            "is_active": True,
+            "k_required": k_required,
+            "expiration_date": expiration_date,
+            "vote_status": "open"
+        }
+        vote = None
+        try:
+            vote = votes.create_vote(vote_data)
+            print(f"🆔 Vote ID : {vote.vote_id}")
+            break
+        except ValueError as e:
+            print(f"Erreur de validation lors de la création du vote : {e}")
+            print("Veuillez corriger les erreurs et recommencer.\n")
+        except Exception as e:
+            print(f"Erreur inattendue lors de la création du vote : {e}")
+            print("Veuillez réessayer.\n")
+    
+    print("\n✅ Vote créé avec succès")
+    
+    if not is_boolean:
+        anwsers = []
+        while True:
+            answer_text = input("➡️ Entrez une option de réponse (ou tapez 'fin' pour terminer) : ").strip()
+            if answer_text.lower() == 'fin':
+                break
+            anwsers.append(answer_text)
+            print(f"✅ Option de réponse '{answer_text}' ajoutée.")
+        print("📝 Options de réponse ajoutées :")
+        try:
+            votes.add_answers_to_vote(vote.vote_id, anwsers)
+            print("✅ Réponses enregistrées avec succès.")
+            for a in anwsers:
+                print(f" - {a}")
+        except ValueError as e:
+            print(f"Erreur de validation lors de l'enregistrement des réponses : {e}")
+        except Exception as e:
+            print(f"Erreur lors de l'enregistrement des réponses : {e}") 
     else:
-        print("❌ Configuration annulée par l'utilisateur.")
-    print("✅Configuration terminée.")
+        try:
+            votes.add_answers_to_vote(vote.vote_id, ["OUI", "NON"])
+            print("✅ Réponses 'OUI' et 'NON' enregistrées pour ce vote.")
+        except ValueError as e:
+            print(f"Erreur de validation lors de l'enregistrement des réponses : {e}")
+        except Exception as e:
+            print(f"Erreur lors de l'enregistrement des réponses : {e}") 
+    try:
+        affecte_vote(vote.vote_id)
+        print("✅ Vote affecté aux utilisateurs avec droit de vote.")   
+    except Exception as e:
+        print(f"Erreur lors de l'affectation du vote aux utilisateurs : {e}")
 
+def affecte_vote(vote_id: int):
+    """Affecte le vote à tous les utilisateurs ayant le droit de vote."""
+    print("➡️ Affectation du vote aux utilisateurs ayant le droit de vote...") 
+    list_all_users()
+    print("➡️  Veuillez selectionner les utilisateurs à qui affecter le vote (ex: 1,3,5 pour les ID 1, 3 et 5) ou 'all' pour tous les utilisateurs avec droit de vote")
+    print ("Taper 'fin' pour terminer la sélection")
+    is_end = False
+    user_ids = []
+    while not is_end:
+        u = input("➡️ User ID : ").strip()
+        if u.lower() == 'fin':
+            is_end = True
+        elif u.lower() == 'all':
+            user_ids.append('all')
+            is_end = True
+        else:
+            user_id = int(u)
+            user_ids.append(user_id)
+
+    if 'all' in user_ids:
+        allusers = users.list_users(False)
+        for user in allusers:
+            user_ids.append(user[0].user_id)
+    else:
+        print("➡️  Recap des utilisateurs sélectionnés pour le vote :")
+        list_users_with_ids(user_ids)
+    try:
+        for user_id in user_ids:
+            votes.assign_vote_to_user(vote_id, user_id)
+        print(f"✅ Vote ID {vote_id} affecté à {len(user_ids)} utilisateurs.")
+    except Exception as e:
+        print(f"Erreur lors de l'affectation du vote aux utilisateurs : {e}")
+
+def _print_vote_results(result: dict):
+    """Affiche les résultats d'un vote (helper partagé entre C3 et F1)."""
+    mode_emoji = "🔍" if result["vote_mode"] == "auditable" else "🔒"
+    status_label = "🟢 Ouvert" if result["vote_status"] == "open" else "🔴 Fermé"
+    print(f"\n{'═' * 62}")
+    print(f"  📋 Vote #{result['vote_id']} — {result['question']}")
+    print(f"  Type : {result['vote_type']}  |  {mode_emoji} {result['vote_mode']}  |  {status_label}")
+    print(f"  Expire le : {result['timeout_at']}")
+    print(f"  Participation : {result['total_votes']}/{result['total_assigned']} votant(s)")
+    print(f"{'─' * 62}")
+    if result["counts"]:
+        print("  📊 Résultats :")
+        for data in result["counts"].values():
+            bar = "█" * (data["count"] * 4)
+            print(f"      {data['text']:20s}  {bar} {data['count']} vote(s)")
+    else:
+        print("  ⚠️  Aucune option de réponse définie.")
+    print(f"{'─' * 62}")
+    print(f"  🏆 Verdict : {result['verdict']}")
+    print(f"{'═' * 62}\n")
+
+
+def force_close_vote():
+    """C6 — Admin : ferme manuellement un vote ouvert."""
+    try:
+        all_votes = votes.get_all_votes()
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    open_votes = [v for v in all_votes if v.vote_status == "open"]
+    if not open_votes:
+        print("✅ Aucun vote ouvert à fermer.")
+        return
+
+    print(f"\n🟢 Votes actuellement ouverts :\n")
+    for v in open_votes:
+        print(f"  [{v.vote_id}] {v.question}  ({v.vote_type} / {v.vote_mode}) — expire : {v.timeout_at}")
+
+    vote_id_str = input("\n➡️  ID du vote à fermer : ").strip()
+    try:
+        vote_id = int(vote_id_str)
+    except ValueError:
+        print("❌ ID invalide.")
+        return
+
+    confirm = input(f"⚠️  Confirmer la fermeture du vote #{vote_id} ? (oui/non) : ").strip().lower()
+    if confirm not in ('oui', 'o', 'yes', 'y'):
+        print("❌ Fermeture annulée.")
+        return
+
+    try:
+        vote = votes.close_vote(vote_id)
+        print(f"✅ Vote #{vote.vote_id} fermé à {vote.closed_at}.")
+    except ValueError as e:
+        print(f"❌ {e}")
+    except Exception as e:
+        print(f"❌ Erreur inattendue : {e}")
+
+
+def list_ongoing_votes():
+    """C5 — Liste les votes en cours et les votants qui n'ont pas encore voté."""
+    try:
+        data = votes.get_ongoing_votes_with_pending_voters()
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    if not data:
+        print("✅ Aucun vote en cours.")
+        return
+
+    print(f"\n🗳️  Votes en cours : {len(data)}\n")
+    for entry in data:
+        mode_emoji = "🔍" if entry["vote_mode"] == "auditable" else "🔒"
+        progress = f"{entry['voted_count']}/{entry['total']}"
+        print(f"  [Vote #{entry['vote_id']}] {mode_emoji} {entry['question']}")
+        print(f"      ⏱️  Expire le : {entry['timeout_at']}  |  Participation : {progress}")
+        if entry["pending"]:
+            print(f"      ⏳ N'ont pas encore voté ({len(entry['pending'])}) :")
+            for uid, username, first, last in entry["pending"]:
+                print(f"          - {first} {last} ({username}, ID {uid})")
+        else:
+            print("      ✅ Tous les votants assignés ont voté !")
+        print()
+
+
+def show_vote_results_admin():
+    """C3 — Admin : liste les votes puis affiche le dépouillement complet d'un vote choisi."""
+    try:
+        all_votes = votes.get_all_votes()
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    if not all_votes:
+        print("❌ Aucun vote dans la base.")
+        return
+
+    print(f"\n📋 Votes disponibles :\n")
+    for v in all_votes:
+        status_emoji = "🟢" if v.vote_status == "open" else "🔴"
+        print(f"  [{v.vote_id}] {status_emoji} {v.question}  ({v.vote_type} / {v.vote_mode}) — {v.vote_status}")
+
+    vote_id_str = input("\n➡️  ID du vote à dépouiller : ").strip()
+    try:
+        vote_id = int(vote_id_str)
+    except ValueError:
+        print("❌ ID invalide.")
+        return
+
+    try:
+        result = votes.count_results(vote_id)
+    except ValueError as e:
+        print(f"❌ {e}")
+        return
+    except Exception as e:
+        print(f"❌ Erreur inattendue : {e}")
+        return
+
+    _print_vote_results(result)
+
+
+def list_my_votes():
+    """F1 — Utilisateur : ses votes assignés, résultats courants, et son choix (si auditable)."""
+    user_id_str = input("➡️  Votre ID utilisateur : ").strip()
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        print("❌ ID invalide.")
+        return
+
+    user = users.get_user_by_id(user_id)
+    if not user:
+        print(f"❌ Aucun utilisateur trouvé avec l'ID {user_id}.")
+        return
+
+    print(f"\n👤 {user.first_name} {user.last_name} ({user.username})\n")
+
+    try:
+        data = votes.get_past_votes_for_user(user_id)
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    if not data:
+        print("📭 Vous n'avez été assigné à aucun vote.")
+        return
+
+    for entry in data:
+        status_emoji = "🟢" if entry["vote_status"] == "open" else "🔴"
+        voted_emoji  = "✅" if entry["has_voted"] else "⏳"
+        mode_emoji   = "🔍" if entry["vote_mode"] == "auditable" else "🔒"
+
+        print(f"{'─' * 55}")
+        print(f"  {voted_emoji} [Vote #{entry['vote_id']}] {status_emoji} {entry['question']}")
+        print(f"     Type : {entry['vote_type']}  |  {mode_emoji} {entry['vote_mode']}  |  Expire : {entry['timeout_at']}")
+
+        if entry["has_voted"]:
+            if entry["vote_mode"] == "auditable" and entry["user_choice_text"]:
+                print(f"     📌 Votre choix : {entry['user_choice_text']}")
+            else:
+                print("     🔒 Vous avez voté (choix anonyme).")
+        else:
+            print("     ⏳ Vous n'avez pas encore voté.")
+
+        if entry["counts"]:
+            print(f"     📊 Résultats courants ({entry['total_votes']} vote(s)) :")
+            for d in entry["counts"].values():
+                print(f"         {d['text']:20s} : {d['count']} vote(s)")
+
+    print(f"{'─' * 55}")
+
+
+def cast_vote():
+    """Interface CLI pour voter : affiche les votes en attente et enregistre le bulletin."""
+
+    # 1. Identification de l'utilisateur
+    user_id_str = input("➡️  Votre ID utilisateur : ").strip()
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        print("❌ ID invalide, veuillez entrer un nombre entier.")
+        return
+
+    user = users.get_user_by_id(user_id)
+    if not user:
+        print(f"❌ Aucun utilisateur trouvé avec l'ID {user_id}.")
+        return
+
+    print(f"\n👤 Bienvenue, {user.first_name} {user.last_name} ({user.username})\n")
+
+    # 2. Votes en attente (nonces non utilisés)
+    try:
+        pending = votes.get_pending_votes_for_user(user_id)
+    except Exception as e:
+        print(f"❌ Erreur lors de la récupération des votes : {e}")
+        return
+
+    if not pending:
+        print("✅ Vous n'avez aucun vote en attente.")
+        return
+
+    print(f"🗳️  Votes en attente ({len(pending)}) :\n")
+    for i, (nonce, vote) in enumerate(pending):
+        mode_emoji = "🔍" if vote.vote_mode == "auditable" else "🔒"
+        print(f"  {i + 1}. [Vote #{vote.vote_id}] {mode_emoji} {vote.question}  ({vote.vote_mode})")
+        if vote.description_text:
+            print(f"       📝 {vote.description_text}")
+        print(f"       ⏱️  Expire le : {vote.timeout_at}")
+
+    # 3. Sélection du vote
+    choice_str = input("\n➡️  Sélectionnez un vote (numéro) : ").strip()
+    try:
+        choice_idx = int(choice_str) - 1
+        if not (0 <= choice_idx < len(pending)):
+            raise ValueError()
+    except ValueError:
+        print("❌ Sélection invalide.")
+        return
+
+    selected_nonce, selected_vote = pending[choice_idx]
+
+    # 4. Affichage du vote et des options
+    print(f"\n{'═' * 60}")
+    print(f"📋 {selected_vote.question}")
+    if selected_vote.description_text:
+        print(f"   {selected_vote.description_text}")
+    if selected_vote.vote_mode == "auditable":
+        print("   🔍 Mode auditable — votre vote sera associé à votre identité.")
+    else:
+        print("   🔒 Mode confidentiel — votre vote est anonyme.")
+    print(f"{'═' * 60}\n")
+
+    try:
+        answers = votes.get_answers_for_vote(selected_vote.vote_id)
+    except Exception as e:
+        print(f"❌ Erreur lors de la récupération des options : {e}")
+        return
+
+    if not answers:
+        print("❌ Aucune option de réponse disponible pour ce vote.")
+        return
+
+    print("Options de réponse :")
+    for a in answers:
+        print(f"  [{a.answer_id}] {a.answer_text}")
+
+    # 5. Choix de la réponse
+    answer_id_str = input("\n➡️  Entrez l'ID de votre choix : ").strip()
+    try:
+        answer_id = int(answer_id_str)
+        valid_ids = [a.answer_id for a in answers]
+        if answer_id not in valid_ids:
+            raise ValueError()
+    except ValueError:
+        print("❌ Choix invalide.")
+        return
+
+    chosen_text = next(a.answer_text for a in answers if a.answer_id == answer_id)
+
+    # 6. Authentification NFC + TOTP
+    print(f"\n🔐 Authentification requise pour valider le vote « {chosen_text} ».")
+    print("   Passez votre badge NFC devant le lecteur (30 secondes)...")
+    print("   (Laissez le délai expirer puis répondez 'non' pour annuler)\n")
+
+    header_id = None
+    for attempt in range(2):
+        try:
+            header_id = badges.get_header_id_from_nfc()
+            print(f"   ✅ Badge détecté.")
+            break
+        except RuntimeError as e:
+            print(f"   ❌ {e}")
+            if attempt == 0:
+                retry = input("   Réessayer ? (oui/non) : ").strip().lower()
+                if retry not in ('oui', 'o', 'yes', 'y'):
+                    print("❌ Vote annulé.")
+                    return
+            else:
+                print("❌ Impossible de lire le badge. Vote annulé.")
+                return
+
+    totp_code = input("➡️  Code TOTP (Google Authenticator) : ").strip()
+
+    ok, error = badges.verify_badge_and_totp(user_id, header_id, totp_code)
+    if not ok:
+        print(f"❌ Authentification échouée : {error}")
+        return
+
+    print("   ✅ Identité vérifiée.\n")
+
+    # 7. Enregistrement
+    try:
+        envelope = votes.cast_vote(selected_nonce.nonce, selected_vote.vote_id, answer_id)
+        print(f"\n✅ Vote enregistré avec succès !")
+        if selected_vote.vote_mode == "auditable":
+            print(f"   🔍 Enveloppe #{envelope.envelope_id} liée à votre identité.")
+        else:
+            print(f"   🔒 Enveloppe #{envelope.envelope_id} enregistrée anonymement.")
+        print(f"   🔗 Hash d'intégrité : {envelope.current_hash[:20]}...")
+    except ValueError as e:
+        print(f"❌ Erreur de validation : {e}")
+    except Exception as e:
+        print(f"❌ Erreur inattendue : {e}")
+
+
+def edit_vote():
+    """Interface CLI pour éditer un vote (uniquement si aucun bulletin déposé)."""
+    try:
+        all_votes = votes.get_all_votes()
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    if not all_votes:
+        print("❌ Aucun vote dans la base.")
+        return
+
+    print(f"\n📋 Votes disponibles :\n")
+    for v in all_votes:
+        status_emoji = "🟢" if v.vote_status == "open" else "🔴"
+        print(f"  [{v.vote_id}] {status_emoji} {v.question}  ({v.vote_type} / {v.vote_mode}) — {v.vote_status}")
+
+    vote_id_str = input("\n➡️  ID du vote à éditer : ").strip()
+    try:
+        vote_id = int(vote_id_str)
+    except ValueError:
+        print("❌ ID invalide.")
+        return
+
+    vote = next((v for v in all_votes if v.vote_id == vote_id), None)
+    if not vote:
+        print(f"❌ Vote #{vote_id} non trouvé.")
+        return
+
+    print(f"\n✏️  Édition du vote #{vote_id}. Laissez vide pour conserver la valeur actuelle.\n")
+    new_question    = input(f"➡️  Question ({vote.question}) : ").strip()
+    new_description = input(f"➡️  Description ({vote.description_text or ''}) : ").strip()
+    new_vote_type   = input(f"➡️  Type ({vote.vote_type}) [majorité/unanimité/minimum_requis] : ").strip()
+    new_vote_mode   = input(f"➡️  Mode ({vote.vote_mode}) [auditable/confidentiel] : ").strip()
+
+    k_required = None
+    effective_type = new_vote_type or vote.vote_type
+    if effective_type == "minimum_requis":
+        k_str = input(f"➡️  k requis ({vote.k_required}) : ").strip()
+        if k_str:
+            try:
+                k_required = int(k_str)
+            except ValueError:
+                print("⚠️  k requis invalide, valeur conservée.")
+
+    new_timeout = None
+    date_str = input(f"➡️  Date d'expiration ({vote.timeout_at}) [JJ/MM/AAAA, vide pour conserver] : ").strip()
+    if date_str:
+        import re as _re
+        from datetime import date as _date
+        if _re.match(r'^\d{2}/\d{2}/\d{4}$', date_str):
+            day, month, year = map(int, date_str.split('/'))
+            try:
+                new_timeout = _date(year, month, day)
+            except ValueError:
+                print("⚠️  Date invalide, valeur conservée.")
+        else:
+            print("⚠️  Format invalide (JJ/MM/AAAA attendu), valeur conservée.")
+
+    vote_data = {}
+    if new_question:
+        vote_data["question"] = new_question
+    if new_description:
+        vote_data["description_text"] = new_description
+    if new_vote_type:
+        vote_data["vote_type"] = new_vote_type
+    if new_vote_mode:
+        vote_data["vote_mode"] = new_vote_mode
+    if k_required is not None:
+        vote_data["k_required"] = k_required
+    if new_timeout:
+        vote_data["timeout_at"] = new_timeout
+
+    if not vote_data:
+        print("ℹ️  Aucune modification effectuée.")
+        return
+
+    try:
+        updated = votes.edit_vote(vote_id, vote_data)
+        print(f"✅ Vote #{updated.vote_id} mis à jour avec succès !")
+    except ValueError as e:
+        print(f"❌ Erreur de validation : {e}")
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+
+
+def show_logs(n: int = 50):
+    """E1 — Affiche les n dernières lignes de aegis.log."""
+    lines = read_recent_logs(n)
+    if not lines:
+        print("📭 Aucun log disponible (aegis.log vide ou absent).")
+        return
+    print(f"\n📰 Dernières {len(lines)} entrées de aegis.log :\n")
+    print("─" * 80)
+    for line in lines:
+        print(line)
+    print("─" * 80)
+
+
+def backup_db():
+    """E3 — Sauvegarde la base de données aegis.db."""
+    try:
+        dest = maintenance.db_save()
+        print(f"✅ Sauvegarde créée : {dest}")
+    except FileNotFoundError as e:
+        print(f"❌ {e}")
+    except Exception as e:
+        print(f"❌ Erreur lors de la sauvegarde : {e}")
+
+
+def verify_integrity():
+    """C4 — Vérifie la chaîne d'intégrité de tous les votes."""
+    print("\n🔗 Vérification de la chaîne d'intégrité (hashchain)...\n")
+    try:
+        report = maintenance.verify_chain()
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        return
+
+    print(f"  Votes analysés   : {report['total_votes']}")
+    print(f"  Avec bulletins   : {report['checked_votes']}")
+    print(f"  ✅ Intègres       : {report['ok']}")
+    print(f"  ❌ Corrompus      : {report['corrupted']}")
+    print()
+
+    for r in report["results"]:
+        if r["status"] == "VIDE":
+            print(f"  [Vote #{r['vote_id']}] ⬜ VIDE    — {r['question'][:55]}")
+        elif r["status"] == "OK":
+            print(f"  [Vote #{r['vote_id']}] ✅ OK      — {r['question'][:55]} ({r['envelopes_checked']} enveloppe(s))")
+        else:
+            print(f"  [Vote #{r['vote_id']}] ❌ CORROMPU — {r['question'][:55]}")
+            for err in r["errors"]:
+                print(f"       └─ {err}")
+
+    print()
+    if report["corrupted"] == 0:
+        print("✅ Intégrité globale : OK — aucune corruption détectée.")
+    else:
+        print(f"🚨 ALERTE : {report['corrupted']} vote(s) avec chaîne corrompue !")
+
+
+def fernet_key(the_file: str):
+    """Interface CLI pour générer une clé Fernet pour les TOTP, les VOTES et les ANSWERS."""
+    secrets_dir = Path("aegis/secrets")
+    secrets_file = secrets_dir / the_file
+
+    print("🔑 Génération de la clé fernet")
+    key = utils.generate_fernet_key()
+    
+
+    # Crée le dossier secrets s'il n'existe pas
+    secrets_dir.mkdir(parents=True, exist_ok=True)
+
+    # Si le fichier existe déjà, avertir l'utilisateur avant d'écraser
+    if secrets_file.exists():
+        print(f"⚠️ Le fichier {secrets_file} existe déjà.")
+        if the_file == "totp.env":
+            print("⚠️ Si vous vous l'écrasez, vous ne pourrez plus badger avec les utilisateurs actuels.")
+        elif the_file == "vote.env":
+            print("⚠️ Vous ne pourrez plus égaller dépouiller les votes confidentiels existants.")
+        elif the_file == "answer.env":
+            print("⚠️ Vous ne pourrez plus déchiffrer les réponses confidentielles existantes.")
+
+        confirm = input("Voulez-vous écraser la clé existante ? (oui/non) : ").strip().lower()
+        if confirm not in ('oui', 'o', 'yes', 'y'):
+            print("Abandon de la génération de la clé.")
+            return
+
+    # Écriture de la clé dans le fichier au format .env
+    with secrets_file.open("w", encoding="utf-8") as f:
+        if the_file == "totp.env":
+            string = "# AEGIS - NowBlackout ENSIBS 2025\n# File: AEGIS/aegis/secrets/totp.env\n# ENV - Store secret key for badge encryption\n\n# CHANGE DEFAULT KEY BEFOR DEPLOYMENT\nFERNET_TOTP_KEY="
+        elif the_file == "vote.env":
+            string = "# AEGIS - NowBlackout ENSIBS 2025\n# File: AEGIS/aegis/secrets/vote.env\n# ENV - Store secret key for user vote choice encryption in confidental mode\n\n# CHANGE DEFAULT KEY BEFOR DEPLOYMENT\nFERNET_VOTE_KEY="
+        elif the_file == "answer.env":
+            string = "# AEGIS - NowBlackout ENSIBS 2025\n# File: AEGIS/aegis/secrets/answer.env\n# ENV - Store secret key for user answer encryption in confidental mode\n\n# CHANGE DEFAULT KEY BEFOR DEPLOYMENT\nFERNET_ANSWER_KEY="
+        f.write(string+key+"\n")
+
+    print(f"➡️  Clé Fernet générée et sauvegardée dans {secrets_file}.")
+    print("⚠️ Veuillez sauvegarder cette clé en lieu sûr. Elle est nécessaire pour le chiffrement et le déchiffrement des données.")
+
+# =============================================================================
+# SECTION G — SECRETS PARTAGÉS (Shamir Secret Sharing)
+# =============================================================================
+
+def my_secret_shares(current_user) -> None:
+    """F3 — Affiche les secrets dont l'utilisateur connecté est dépositaire."""
+    badge_id = secret_sharing.get_badge_id_for_user(current_user.user_id)
+    if badge_id is None:
+        print("❌ Aucun badge actif trouvé pour votre compte.")
+        return
+
+    shares = secret_sharing.get_shares_for_badge(badge_id)
+    if not shares:
+        print("📭 Vous n'êtes dépositaire d'aucun fragment secret.")
+        return
+
+    print(f"\n🔐 Fragments secrets dont vous êtes dépositaire ({len(shares)}) :\n")
+    print(f"  {'Label':<30} {'Seuil':>6}  {'Émis le'}")
+    print("  " + "─" * 58)
+    for s in shares:
+        issued = s["issued_at"].strftime("%d/%m/%Y") if s["issued_at"] else "—"
+        used_tag = "  [utilisé]" if s["secret_used"] else ""
+        print(f"  {s['label']:<30} {s['k']}/{s['n']:>2}     {issued}{used_tag}")
+    print()
+
+
+def create_secret_split(current_user) -> None:
+    """G1 — Crée un secret et le split entre des membres sélectionnés."""
+    import getpass
+
+    print("\n🔐 Création d'un secret partagé (Shamir Secret Sharing)\n")
+
+    # Label
+    while True:
+        label = input("➡️  Label du secret (ex: 'Clé serveur prod') : ").strip()
+        if label:
+            break
+        print("⚠️  Le label ne peut pas être vide.")
+
+    # Secret (masqué, double saisie)
+    while True:
+        secret1 = getpass.getpass("➡️  Entrez le secret (masqué) : ")
+        secret2 = getpass.getpass("➡️  Confirmez le secret       : ")
+        if secret1 == secret2 and secret1:
+            break
+        print("⚠️  Les secrets ne correspondent pas ou sont vides. Recommencez.")
+
+    secret_text = secret1
+    del secret1, secret2  # effacer de la mémoire locale
+
+    # Sélection des dépositaires (par badge_id)
+    list_all_users()
+    print("\n➡️  Sélectionnez les dépositaires par leur ID de badge.")
+    print("   (Listez les ID badges séparés par des virgules, ex: 1,3,5)")
+    print("   Tip : A1 liste les utilisateurs avec leur Badge ID\n")
+
+    while True:
+        raw = input("➡️  Badge IDs des dépositaires : ").strip()
+        try:
+            badge_ids = [int(x.strip()) for x in raw.split(",") if x.strip()]
+            if len(badge_ids) >= 2:
+                break
+            print("⚠️  Il faut au moins 2 dépositaires.")
+        except ValueError:
+            print("⚠️  Format invalide. Entrez des entiers séparés par des virgules.")
+
+    n = len(badge_ids)
+
+    # k (seuil)
+    while True:
+        k_str = input(f"➡️  Seuil k (minimum de parts requises pour reconstruire, max {n}) : ").strip()
+        try:
+            k = int(k_str)
+            if 2 <= k <= n:
+                break
+            print(f"⚠️  k doit être entre 2 et {n}.")
+        except ValueError:
+            print("⚠️  Entrez un entier.")
+
+    # Confirmation
+    print(f"\n📋 Récapitulatif :")
+    print(f"   Label     : {label}")
+    print(f"   Dépositaires (badge IDs) : {badge_ids}")
+    print(f"   Seuil     : {k}/{n} parts requises pour reconstruire")
+    print("⚠️  Après la création, vous ne pourrez PAS retrouver le secret sans "
+          f"{k} dépositaires.\n")
+
+    confirm = input("➡️  Confirmer la création ? (oui/non) : ").strip().lower()
+    if confirm not in ("oui", "o", "yes", "y"):
+        print("❌ Création annulée.")
+        del secret_text
+        return
+
+    try:
+        secret = secret_sharing.split_and_store(label, secret_text, k, badge_ids, current_user.user_id)
+        del secret_text
+        print(f"\n✅ Secret '{label}' créé (ID {secret.secret_id}) et distribué à {n} dépositaires.")
+        print(f"   ℹ️  {k} parts sur {n} seront nécessaires pour reconstruire.")
+    except ValueError as e:
+        del secret_text
+        print(f"❌ Erreur de validation : {e}")
+    except Exception as e:
+        del secret_text
+        print(f"❌ Erreur : {e}")
+
+
+def delete_secret(current_user) -> None:
+    """G2 — Supprime un secret par son label (admin/superadmin uniquement)."""
+    labels = secret_sharing.list_labels()
+    if not labels:
+        print("📭 Aucun secret partagé dans la base.")
+        return
+
+    print(f"\n📋 Secrets existants :\n")
+    print(f"  {'ID':>4}  {'Label':<35} {'k/n':>5}  {'Émis le':<12}  {'Statut'}")
+    print("  " + "─" * 70)
+    for s in labels:
+        issued  = s["issued_at"].strftime("%d/%m/%Y") if s["issued_at"] else "—"
+        statut  = "utilisé" if s["used"] else "actif"
+        print(f"  {s['secret_id']:>4}  {s['label']:<35} {s['k']}/{s['n']:<3}  {issued:<12}  {statut}")
+
+    label = input("\n➡️  Label du secret à supprimer : ").strip()
+    if not label:
+        print("❌ Label vide.")
+        return
+
+    confirm = input(
+        f"⚠️  Supprimer '{label}' et toutes ses parts ? "
+        "Les dépositaires perdront leur fragment. (oui/non) : "
+    ).strip().lower()
+    if confirm not in ("oui", "o", "yes", "y"):
+        print("❌ Suppression annulée.")
+        return
+
+    try:
+        n = secret_sharing.delete_by_label(label)
+        print(f"✅ Secret '{label}' supprimé — {n} fragment(s) révoqué(s).")
+    except ValueError as e:
+        print(f"❌ {e}")
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+
+
+def reconstruct_secret_interactive(current_user) -> None:
+    """
+    G3 — Reconstruction interactive d'un secret.
+    L'admin sélectionne le label, puis les dépositaires badgent un par un
+    jusqu'à atteindre le seuil k. Le secret est alors affiché.
+    """
+    labels = secret_sharing.list_labels()
+    if not labels:
+        print("📭 Aucun secret partagé dans la base.")
+        return
+
+    print(f"\n📋 Secrets disponibles :\n")
+    for s in labels:
+        issued = s["issued_at"].strftime("%d/%m/%Y") if s["issued_at"] else "—"
+        print(f"  [{s['secret_id']}] '{s['label']}'  ({s['k']}/{s['n']} parts)  —  {issued}")
+
+    sid_str = input("\n➡️  ID du secret à reconstruire : ").strip()
+    try:
+        secret_id = int(sid_str)
+        selected  = next((s for s in labels if s["secret_id"] == secret_id), None)
+        if not selected:
+            print("❌ Secret non trouvé.")
+            return
+    except ValueError:
+        print("❌ ID invalide.")
+        return
+
+    k = selected["k"]
+    n = selected["n"]
+    label = selected["label"]
+
+    # Liste des dépositaires
+    custodians = secret_sharing.get_custodians(secret_id)
+    if not custodians:
+        print("❌ Aucun dépositaire trouvé pour ce secret.")
+        return
+
+    print(f"\n🔐 Reconstruction de '{label}'")
+    print(f"   Il faut {k} parts sur {n}. Dépositaires :")
+    for c in custodians:
+        print(f"     - {c['first_name']} {c['last_name']} ({c['username']}) — badge ID {c['badge_id']}")
+
+    collected_shares: list[str] = []
+    contributed_badges: set[int] = set()
+
+    print(f"\n➡️  Faites badger les dépositaires un par un ({k} nécessaires).\n")
+
+    while len(collected_shares) < k:
+        remaining = k - len(collected_shares)
+        print(f"   [{len(collected_shares)}/{k}] Encore {remaining} part(s) requise(s).")
+        print("   ➡️  Le dépositaire doit passer son badge NFC...")
+
+        # Scan NFC
+        header_id = None
+        for attempt in range(2):
+            try:
+                header_id = badges.get_header_id_from_nfc()
+                print("   ✅ Badge détecté.")
+                break
+            except RuntimeError as e:
+                print(f"   ❌ {e}")
+                if attempt == 0:
+                    retry = input("   Réessayer ? (oui/non) : ").strip().lower()
+                    if retry not in ("oui", "o", "yes", "y"):
+                        print("❌ Reconstruction annulée.")
+                        return
+                else:
+                    print("❌ Impossible de lire le badge. Reconstruction annulée.")
+                    return
+
+        totp_code = input("   ➡️  Code TOTP du dépositaire : ").strip()
+
+        # Identifier le badge parmi les dépositaires
+        badge_matched = None
+        for c in custodians:
+            ok, _ = badges.verify_badge_and_totp(c["user_id"], header_id, totp_code)
+            if ok:
+                badge_matched = c
+                break
+
+        if not badge_matched:
+            print("   ❌ Badge non reconnu parmi les dépositaires de ce secret.")
+            continue
+
+        if badge_matched["badge_id"] in contributed_badges:
+            print(f"   ⚠️  {badge_matched['username']} a déjà contribué sa part.")
+            continue
+
+        share_value = secret_sharing.collect_share(secret_id, badge_matched["badge_id"])
+        if share_value is None:
+            print("   ❌ Aucune part trouvée pour ce badge.")
+            continue
+
+        collected_shares.append(share_value)
+        contributed_badges.add(badge_matched["badge_id"])
+        print(f"   ✅ Part de {badge_matched['first_name']} {badge_matched['last_name']} collectée.")
+
+    # Reconstruction
+    try:
+        secret_text = secret_sharing.reconstruct(secret_id, collected_shares)
+        print(f"\n{'═' * 60}")
+        print(f"  🔓 SECRET RECONSTRUIT — '{label}'")
+        print(f"{'─' * 60}")
+        print(f"  {secret_text}")
+        print(f"{'═' * 60}")
+        print("\n⚠️  Mémorisez ce secret et fermez ce terminal pour effacer l'affichage.")
+    except Exception as e:
+        print(f"❌ Échec de la reconstruction : {e}")
 
 
 if __name__ == "__main__":
