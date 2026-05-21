@@ -16,3 +16,6 @@ FLASK_SECRET_KEY = os.getenv("AEGIS_SECRET_KEY") or _secrets.token_hex(32)
 # --- Base de données ---
 DB_PATH          = os.getenv("AEGIS_DB_PATH", "aegis.db")
 SQLALCHEMY_DEBUG = os.getenv("AEGIS_SQLALCHEMY_DEBUG", "false").lower() == "true"
+
+# --- Frontend ---
+DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"

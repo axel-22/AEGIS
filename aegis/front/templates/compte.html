@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">👤 Mon compte</div>
+<div class="page-subtitle">Profil, historique de votes et secrets.</div>
+
+<div style="display:flex;gap:8px;margin-bottom:28px;">
+    <button class="btn btn-primary"   id="tbtn-p" onclick="switchTab('profil')">Profil</button>
+    <button class="btn btn-secondary" id="tbtn-v" onclick="switchTab('votes')">Mes votes</button>
+    <button class="btn btn-secondary" id="tbtn-s" onclick="switchTab('secrets')">Mes secrets</button>
+</div>
+
+<!-- Profil -->
+<div id="tab-profil">
+    <div id="profil-loading" class="alert alert-info"><span class="spinner"></span> Chargement…</div>
+    <div id="profil-content" style="display:none">
+        <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:24px;">
+            <div class="stat-card accent">
+                <div class="stat-number" style="font-size:28px;" id="p-name">—</div>
+                <div class="stat-label">Nom complet</div>
+            </div>
+            <div class="stat-card cyan">
+                <div class="stat-number" style="font-size:22px;" id="p-username">—</div>
+                <div class="stat-label">Identifiant</div>
+            </div>
+            <div class="stat-card gold">
+                <div class="stat-number" style="font-size:22px;" id="p-role">—</div>
+                <div class="stat-label">Rôle</div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Permissions</h2>
+            <div id="p-perms" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Votes -->
+<div id="tab-votes" style="display:none">
+    <div id="votes-loading" class="alert alert-info"><span class="spinner"></span> Chargement…</div>
+    <div id="votes-content"></div>
+</div>
+
+<!-- Secrets -->
+<div id="tab-secrets" style="display:none">
+    <div id="secrets-loading" class="alert alert-info"><span class="spinner"></span> Chargement…</div>
+    <div id="secrets-content"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function switchTab(t) {
+    ['profil','votes','secrets'].forEach(x=>{
+        document.getElementById('tab-'+x).style.display=x===t?'':'none';
+        document.getElementById('tbtn-'+x[0]).className=x===t?'btn btn-primary':'btn btn-secondary';
+    });
+    if(t==='votes') loadVotes();
+    if(t==='secrets') loadSecrets();
+}
+// fix tbtn keys
+document.getElementById('tbtn-p').onclick=()=>switchTab('profil');
+document.getElementById('tbtn-v').onclick=()=>switchTab('votes');
+document.getElementById('tbtn-s').onclick=()=>switchTab('secrets');
+
+async function loadProfil(){
+    const {ok,data}=await api('GET','me');
+    document.getElementById('profil-loading').classList.add('hidden');
+    if(!ok) return;
+    document.getElementById('p-name').textContent=`${data.first_name} ${data.last_name}`;
+    document.getElementById('p-username').textContent='@'+data.username;
+    document.getElementById('p-role').textContent=data.role;
+    document.getElementById('p-perms').innerHTML=(data.permissions||[]).map(p=>`
+        <span style="background:rgba(76,201,240,0.1);border:1px solid rgba(76,201,240,0.2);border-radius:6px;padding:4px 10px;font-size:12px;color:var(--cyan)">${p}</span>`).join('');
+    document.getElementById('profil-content').style.display='';
+}
+
+async function loadVotes(){
+    const {ok,data}=await api('GET','votes');
+    document.getElementById('votes-loading').classList.add('hidden');
+    if(!ok||!data.length){document.getElementById('votes-content').innerHTML='<div class="alert alert-info">Aucun vote trouvé.</div>';return;}
+    document.getElementById('votes-content').innerHTML=`<div class="card"><table>
+        <thead><tr><th>#</th><th>Question</th><th>Mode</th><th>Statut</th></tr></thead>
+        <tbody>${data.map(v=>`<tr>
+            <td>${v.vote_id}</td><td>${v.question}</td>
+            <td><span style="background:rgba(76,201,240,0.1);border-radius:6px;padding:3px 8px;font-size:12px;color:var(--cyan)">${v.vote_mode}</span></td>
+            <td class="${v.vote_status==='open'?'badge-status-active':'badge-status-revoked'}">${v.vote_status==='open'?'Ouvert':'Fermé'}</td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function loadSecrets(){
+    const {ok,data}=await api('GET','secrets/mine');
+    document.getElementById('secrets-loading').classList.add('hidden');
+    if(!ok){document.getElementById('secrets-content').innerHTML='<div class="alert alert-error">'+(data.error||'Erreur')+'</div>';return;}
+    if(!data.length){document.getElementById('secrets-content').innerHTML='<div class="alert alert-info">Vous n\'êtes dépositaire d\'aucun secret.</div>';return;}
+    document.getElementById('secrets-content').innerHTML=`<div class="card"><table>
+        <thead><tr><th>#</th><th>Label</th><th>Seuil</th><th>Utilisé</th><th>Date</th></tr></thead>
+        <tbody>${data.map(s=>`<tr>
+            <td>${s.secret_id}</td><td><strong>${s.label}</strong></td>
+            <td>${s.k}/${s.n}</td>
+            <td>${s.secret_used?'<span class="badge-status-revoked">Oui</span>':'<span class="badge-status-active">Non</span>'}</td>
+            <td style="color:var(--muted);font-size:12px">${s.issued_at?new Date(s.issued_at).toLocaleDateString('fr'):'—'}</td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+loadProfil();
+</script>
+{% endblock %}

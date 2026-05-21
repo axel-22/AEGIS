@@ -11,15 +11,18 @@
 # Tous les endpoints protégés retournent 401 si non connecté, 403 si rôle insuffisant.
 
 from functools import wraps
+from pathlib import Path
 
-from flask import Flask, jsonify, request, session
+from flask import Flask, jsonify, request, session, render_template
 
 from aegis.services import users, badges, votes, secret_sharing
 from aegis.services import rbac, maintenance
 from aegis.core._logger import read_recent_logs
-from aegis.core._config import FLASK_SECRET_KEY
+from aegis.core._config import FLASK_SECRET_KEY, DEV_MODE
 
-app = Flask(__name__)
+_TEMPLATES = Path(__file__).parent.parent / "front" / "templates"
+
+app = Flask(__name__, template_folder=str(_TEMPLATES))
 app.secret_key = FLASK_SECRET_KEY
 
 
@@ -60,6 +63,43 @@ def _current_user():
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
+
+@app.get("/api/auth/lookup")
+def api_auth_lookup():
+    """
+    Lookup public : vérifie qu'un username existe et retourne prénom/nom/rôle.
+    Utilisé par le front pour afficher la carte utilisateur à l'étape 1 du login.
+    Ne retourne pas d'information sensible.
+    """
+    username = (request.args.get("username") or "").strip().lower()
+    if not username:
+        return jsonify({"error": "username requis."}), 400
+    user = users.get_user_by_username(username)
+    if not user:
+        return jsonify({"error": "Utilisateur inconnu."}), 404
+    if not user.the_role:
+        return jsonify({"error": "Aucun rôle assigné à ce compte."}), 403
+    return jsonify({
+        "first_name": user.first_name,
+        "last_name":  user.last_name,
+        "role":       user.the_role,
+    })
+
+
+@app.post("/api/auth/scan-badge")
+def api_scan_badge():
+    """
+    Déclenche le lecteur NFC côté serveur et retourne le header_id brut.
+    Bloquant jusqu'à 30 secondes (timeout du lecteur).
+    """
+    try:
+        header_id = badges.get_header_id_from_nfc()
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+    if not header_id:
+        return jsonify({"error": "Aucun badge détecté dans le délai imparti."}), 408
+    return jsonify({"header_id": header_id})
+
 
 @app.post("/api/login")
 def api_login():
@@ -149,6 +189,11 @@ def api_list_users():
 @permission_required("users.create")
 def api_create_user():
     data = request.get_json(silent=True) or {}
+    # normalize: web form sends 'role', service expects 'the_role'
+    if "role" in data and "the_role" not in data:
+        data["the_role"] = data.pop("role")
+    data.setdefault("email", None)
+    data.setdefault("job", None)
     try:
         user = users.create_user(data)
     except ValueError as e:
@@ -162,6 +207,10 @@ def api_create_user():
 @permission_required("users.edit")
 def api_edit_user(user_id: int):
     data = request.get_json(silent=True) or {}
+    if "role" in data and "the_role" not in data:
+        data["the_role"] = data.pop("role")
+    data.setdefault("email", None)
+    data.setdefault("job", None)
     try:
         updated = users.edit_user(user_id, data)
     except ValueError as e:
@@ -184,6 +233,47 @@ def api_delete_user(user_id: int):
 # ---------------------------------------------------------------------------
 # Badges
 # ---------------------------------------------------------------------------
+
+@app.post("/api/badges")
+@permission_required("users.create")
+def api_create_badge():
+    """
+    Crée un badge NFC+TOTP et l'attache à un utilisateur.
+    Body : { "user_id": int, "header_id": str }
+    Retourne badge_id + totp_uri + qr_b64 (PNG base64).
+    """
+    import io, base64 as _b64, pyotp
+    import qrcode as _qr
+    data    = request.get_json(silent=True) or {}
+    user_id = data.get("user_id")
+    header_id = (data.get("header_id") or "").strip()
+    if not user_id or not header_id:
+        return jsonify({"error": "user_id et header_id sont requis."}), 400
+    user = users.get_user_by_id(user_id)
+    if not user:
+        return jsonify({"error": "Utilisateur introuvable."}), 404
+    secret = badges.generate_totp_secret()
+    totp   = pyotp.TOTP(secret)
+    uri    = totp.provisioning_uri(name=user.username, issuer_name="AEGIS")
+    try:
+        badge = badges.create_badge(user.username, secret, header_id)
+        badges.attach_badge_to_user(badge.badge_id, user.user_id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    qr = _qr.QRCode(border=1)
+    qr.add_data(uri)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    qr_b64 = _b64.b64encode(buf.getvalue()).decode()
+    return jsonify({"message": "Badge créé.", "badge_id": badge.badge_id,
+                    "totp_uri": uri, "qr_b64": qr_b64}), 201
+
+
+
 
 @app.get("/api/badges")
 @permission_required("badges.list")
@@ -455,6 +545,35 @@ def api_close_vote(vote_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Clés Fernet
+# ---------------------------------------------------------------------------
+
+@app.post("/api/keys/generate")
+@permission_required("keys.generate")
+def api_generate_key():
+    """
+    Génère une clé Fernet et la sauvegarde dans aegis/secrets/<type>.env.
+    Body : { "type": "totp" | "vote" | "answer" }
+    """
+    from pathlib import Path
+    from dotenv import load_dotenv
+    from aegis.services import utils as svc_utils
+    data     = request.get_json(silent=True) or {}
+    key_type = (data.get("type") or "").strip()
+    VAR = {"totp": "FERNET_TOTP_KEY", "vote": "FERNET_VOTE_KEY", "answer": "FERNET_ANSWER_KEY"}
+    if key_type not in VAR:
+        return jsonify({"error": "type doit être 'totp', 'vote' ou 'answer'."}), 400
+    secrets_dir = Path("aegis/secrets")
+    secrets_dir.mkdir(parents=True, exist_ok=True)
+    env_file = secrets_dir / f"{key_type}.env"
+    key = svc_utils.generate_fernet_key()
+    with env_file.open("w", encoding="utf-8") as f:
+        f.write(f"# AEGIS\n{VAR[key_type]}={key}\n")
+    load_dotenv(str(env_file), override=True)
+    return jsonify({"message": f"Clé {key_type} générée et sauvegardée.", "var": VAR[key_type]})
+
+
+# ---------------------------------------------------------------------------
 # Maintenance & Logs
 # ---------------------------------------------------------------------------
 
@@ -718,6 +837,40 @@ def _vote_to_dict(v) -> dict:
         "closed_at":    str(v.closed_at) if v.closed_at else None,
         "creator_user_id": v.creator_user_id,
     }
+
+
+# ---------------------------------------------------------------------------
+# Pages frontend
+# ---------------------------------------------------------------------------
+
+@app.get("/")
+@app.get("/connexion")
+def page_connexion():
+    return render_template("connexion.html", dev_mode=DEV_MODE)
+
+@app.get("/vote")
+def page_vote():
+    return render_template("vote.html")
+
+@app.get("/admin")
+def page_admin():
+    return render_template("administration.html")
+
+@app.get("/super_admin")
+def page_super_admin():
+    return render_template("super_admin.html")
+
+@app.get("/stats")
+def page_stats():
+    return render_template("statistiques.html")
+
+@app.get("/compte")
+def page_compte():
+    return render_template("compte.html")
+
+@app.get("/no_role")
+def page_no_role():
+    return render_template("no_role.html")
 
 
 # ---------------------------------------------------------------------------

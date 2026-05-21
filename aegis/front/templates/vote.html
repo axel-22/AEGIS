@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.vote-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:16px; }
+.vote-question { font-family:'Syne',sans-serif;font-weight:700;font-size:17px; }
+.vote-meta { font-size:12px;color:var(--muted);margin-top:6px; }
+.mode-pill { display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px; }
+.mode-confidential { background:rgba(230,57,70,0.15);color:var(--accent); }
+.mode-auditable    { background:rgba(76,201,240,0.15);color:var(--cyan); }
+.modal-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center; }
+.modal-overlay.open { display:flex; }
+.modal { background:var(--deep);border:1px solid var(--border);border-radius:20px;padding:36px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto; }
+.modal h2 { font-family:'Syne',sans-serif;font-weight:800;margin-bottom:20px; }
+.nfc-zone { text-align:center;padding:24px 0 16px; }
+.nfc-icon { font-size:48px;margin-bottom:12px;display:block; }
+.nfc-icon.scanning { animation:pulse 1.2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.12)} }
+</style>
+
+<div class="page-title">🗳️ Votes</div>
+<div class="page-subtitle">Votez et consultez vos résultats.</div>
+
+<div style="display:flex;gap:8px;margin-bottom:28px;">
+    <button class="btn btn-primary"   id="tbtn-p" onclick="switchTab('pending')">En attente</button>
+    <button class="btn btn-secondary" id="tbtn-h" onclick="switchTab('history')">Mes votes</button>
+</div>
+
+<div id="tab-pending">
+    <div id="pending-loading" class="alert alert-info"><span class="spinner"></span> Chargement…</div>
+    <div id="pending-empty" class="alert alert-info hidden">✅ Aucun vote en attente.</div>
+    <div id="pending-list"></div>
+</div>
+<div id="tab-history" style="display:none">
+    <div id="hist-loading" class="alert alert-info"><span class="spinner"></span> Chargement…</div>
+    <div id="hist-list"></div>
+</div>
+
+<!-- Modal vote -->
+<div class="modal-overlay" id="vote-modal">
+<div class="modal">
+    <h2 id="m-question"></h2>
+    <p id="m-desc" style="color:var(--muted);font-size:13px;margin-bottom:20px;"></p>
+    <div id="m-alert" class="alert alert-error hidden"></div>
+
+    <div id="mstep-opts">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">Choisissez votre réponse :</p>
+        <div class="vote-options" id="m-options"></div>
+        <div style="text-align:right;margin-top:8px;">
+            <button class="btn btn-secondary" onclick="closeModal()">Annuler</button>
+        </div>
+    </div>
+
+    <div id="mstep-nfc" style="display:none">
+        <div class="nfc-zone">
+            <span class="nfc-icon" id="mnfc-icon">🪪</span>
+            <p style="font-weight:600;margin-bottom:6px;" id="mnfc-text">Ré-authentification requise</p>
+            <p style="color:var(--muted);font-size:13px;margin-bottom:20px;">Passez votre badge pour confirmer votre identité.</p>
+            <button class="btn btn-primary" id="mnfc-btn" onclick="startVoteNfc()">Activer le lecteur NFC</button>
+        </div>
+        <div style="text-align:center;margin-top:8px;">
+            <button class="btn btn-secondary btn-sm" onclick="closeModal()">Annuler</button>
+        </div>
+    </div>
+
+    <div id="mstep-totp" style="display:none">
+        <label>Code TOTP</label>
+        <input type="text" id="m-totp" maxlength="6" inputmode="numeric" placeholder="6 chiffres">
+        <div style="display:flex;justify-content:space-between;margin-top:12px;">
+            <button class="btn btn-secondary" onclick="closeModal()">Annuler</button>
+            <button class="btn btn-primary" onclick="submitVote()">
+                <span id="m-spinner" class="spinner hidden"></span> Confirmer
+            </button>
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let _cv=null, _nfcId=null;
+
+function switchTab(t) {
+    document.getElementById('tab-pending').style.display=t==='pending'?'':'none';
+    document.getElementById('tab-history').style.display=t==='history'?'':'none';
+    document.getElementById('tbtn-p').className=t==='pending'?'btn btn-primary':'btn btn-secondary';
+    document.getElementById('tbtn-h').className=t==='history'?'btn btn-primary':'btn btn-secondary';
+    if(t==='history') loadHistory();
+}
+
+async function loadPending() {
+    const {ok,data}=await api('GET','votes/pending');
+    document.getElementById('pending-loading').classList.add('hidden');
+    if(!ok||!data.length){document.getElementById('pending-empty').classList.remove('hidden');return;}
+    document.getElementById('pending-list').innerHTML=data.map(v=>`
+        <div class="vote-card">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+                <div>
+                    <div class="vote-question">${v.question}</div>
+                    <div class="vote-meta">${v.description||''}</div>
+                </div>
+                <span class="mode-pill mode-${v.vote_mode}">${v.vote_mode}</span>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">⏱ Expire : ${v.timeout_at||'—'}</div>
+            <button class="btn btn-primary btn-sm" onclick="openModal('${v.nonce}',${v.vote_id},'${v.question.replace(/'/g,"\\'")}','${(v.description||'').replace(/'/g,"\\'")}')">Voter →</button>
+        </div>`).join('');
+}
+
+async function openModal(nonce,voteId,question,desc) {
+    _cv={nonce,vote_id:voteId,answer_id:null}; _nfcId=null;
+    document.getElementById('m-question').textContent=question;
+    document.getElementById('m-desc').textContent=desc;
+    document.getElementById('m-alert').classList.add('hidden');
+    const {ok,data}=await api('GET',`votes/${voteId}/answers`);
+    document.getElementById('m-options').innerHTML=ok?data.map(a=>`
+        <button class="vote-option-btn" onclick="pickAnswer(${a.answer_id})">${a.answer_text}</button>`).join(''):'<p>Erreur chargement.</p>';
+    showMStep('opts');
+    document.getElementById('vote-modal').classList.add('open');
+}
+
+function pickAnswer(id){_cv.answer_id=id;showMStep('nfc');}
+
+function showMStep(s){
+    ['opts','nfc','totp'].forEach(x=>document.getElementById('mstep-'+x).style.display=x===s?'':'none');
+    document.getElementById('m-alert').classList.add('hidden');
+    if(s==='nfc')resetNfc();
+}
+
+function resetNfc(){
+    _nfcId=null;
+    document.getElementById('mnfc-icon').className='nfc-icon';
+    document.getElementById('mnfc-icon').textContent='🪪';
+    document.getElementById('mnfc-text').textContent='Ré-authentification requise';
+    document.getElementById('mnfc-btn').style.display='';
+    document.getElementById('mnfc-btn').textContent='Activer le lecteur NFC';
+}
+
+async function startVoteNfc(){
+    document.getElementById('mnfc-btn').style.display='none';
+    document.getElementById('mnfc-icon').className='nfc-icon scanning';
+    document.getElementById('mnfc-text').textContent='En attente du badge…';
+    try{
+        const r=await fetch('/api/auth/scan-badge',{method:'POST',signal:AbortSignal.timeout(35000)});
+        const d=await r.json();
+        if(!r.ok){document.getElementById('mnfc-icon').textContent='❌';document.getElementById('mnfc-text').textContent=d.error||'Erreur';document.getElementById('mnfc-btn').style.display='';return;}
+        _nfcId=d.header_id;
+        document.getElementById('mnfc-icon').className='nfc-icon';
+        document.getElementById('mnfc-icon').textContent='✅';
+        document.getElementById('mnfc-text').textContent='Badge détecté !';
+        setTimeout(()=>showMStep('totp'),600);
+    }catch(e){
+        document.getElementById('mnfc-icon').textContent='⏱';
+        document.getElementById('mnfc-text').textContent='Délai dépassé';
+        document.getElementById('mnfc-btn').style.display='';
+        document.getElementById('mnfc-btn').textContent='Réessayer';
+    }
+}
+
+async function submitVote(){
+    const totp=document.getElementById('m-totp').value.trim();
+    if(!totp)return;
+    document.getElementById('m-spinner').classList.remove('hidden');
+    const {ok,data}=await api('POST',`votes/${_cv.vote_id}/cast`,{nonce:_cv.nonce,answer_id:_cv.answer_id,header_id:_nfcId,totp_code:totp});
+    document.getElementById('m-spinner').classList.add('hidden');
+    if(ok){closeModal();loadPending();}
+    else{const a=document.getElementById('m-alert');a.textContent=data.error||'Erreur.';a.classList.remove('hidden');document.getElementById('m-totp').value='';}
+}
+
+function closeModal(){document.getElementById('vote-modal').classList.remove('open');}
+
+async function loadHistory(){
+    const {ok,data}=await api('GET','votes');
+    document.getElementById('hist-loading').classList.add('hidden');
+    if(!ok||!data.length){document.getElementById('hist-list').innerHTML='<div class="alert alert-info">Aucun vote trouvé.</div>';return;}
+    document.getElementById('hist-list').innerHTML=`
+        <div class="card">
+        <table>
+        <thead><tr><th>#</th><th>Question</th><th>Mode</th><th>Statut</th></tr></thead>
+        <tbody>${data.map(v=>`
+            <tr>
+                <td>${v.vote_id}</td>
+                <td>${v.question}</td>
+                <td><span class="mode-pill mode-${v.vote_mode}">${v.vote_mode}</span></td>
+                <td class="${v.vote_status==='open'?'badge-status-active':'badge-status-revoked'}">${v.vote_status==='open'?'Ouvert':'Fermé'}</td>
+            </tr>`).join('')}
+        </tbody></table></div>`;
+}
+
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+loadPending();
+</script>
+{% endblock %}

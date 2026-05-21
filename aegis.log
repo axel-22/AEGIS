@@ -44,3 +44,44 @@
 21/05/2026 12:14:38.3416 | INFO     | secret_sharing | Secret 'clé OpenAi' (secret_id=1) reconstruit avec succès
 21/05/2026 12:16:33.7813 | INFO     | maintenance  | Vote #1 'Aegis est-il une solution révolutionaire' — OK (4 enveloppe(s))
 21/05/2026 12:16:33.7816 | INFO     | maintenance  | Vérification terminée — 1 vote(s), 1 OK, 0 CORROMPU(s)
+21/05/2026 15:04:40.7553 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:22:18.0803 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:22:20.3441 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:22:20.9745 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:22:21.2892 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:22:21.5703 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:22:21.7977 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:22:25.8359 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:47:56.5871 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:48:01.0761 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:48:02.2451 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:48:02.8205 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:48:03.3410 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:48:03.8542 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:48:04.1344 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:48:38.0812 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:41.4364 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:42.1313 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:42.4222 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:42.6881 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:42.9378 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:43.1733 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:43.4586 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:43.7897 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:44.0897 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:44.9695 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:45.2364 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:45.7042 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:45.9803 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:46.2338 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:46.4980 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:48:46.7376 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:49:38.5133 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:58:26.3625 | INFO     | badges       | Authentification réussie — user_id=5
+21/05/2026 15:59:03.7536 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 15:59:45.6724 | INFO     | maintenance  | Vote #1 'Aegis est-il une solution révolutionaire' — OK (4 enveloppe(s))
+21/05/2026 15:59:45.6730 | INFO     | maintenance  | Vérification terminée — 1 vote(s), 1 OK, 0 CORROMPU(s)
+21/05/2026 16:04:57.5131 | ERROR    | votes        | Création du vote refusée : Type de vote invalide. Choisissez parmi : unanimité, majorité, minimum_requis.
+21/05/2026 16:09:44.8859 | INFO     | badges       | Authentification réussie — user_id=1
+21/05/2026 16:10:24.1276 | INFO     | users        | Utilisateur créé — username='jc.veillon' role='auditor'
+21/05/2026 16:10:35.3251 | INFO     | badges       | Badge créé — badge_id=6 username='jc.veillon' header=1b991c4f53daeabd…

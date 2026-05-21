@@ -1,0 +1,797 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--deep);border:1px solid var(--border);border-radius:20px;padding:36px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;}
+.modal h2{font-family:'Syne',sans-serif;font-weight:800;margin-bottom:20px;}
+.mode-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;}
+.mode-confidential{background:rgba(230,57,70,.15);color:var(--accent);}
+.mode-auditable{background:rgba(76,201,240,.15);color:var(--cyan);}
+.nfc-zone{text-align:center;padding:20px 0 12px;}
+.nfc-icon{font-size:48px;margin-bottom:10px;display:block;}
+.nfc-icon.scanning{animation:pulse 1.2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.12)}}
+.log-line{font-family:monospace;font-size:12px;color:var(--muted);padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04);}
+.key-box{font-family:monospace;font-size:13px;background:rgba(76,201,240,0.06);border:1px solid rgba(76,201,240,0.2);border-radius:8px;padding:12px 16px;word-break:break-all;color:var(--cyan);}
+</style>
+
+<div class="page-title">🛡️ Super Administration</div>
+<div class="page-subtitle">Gestion complète du système AEGIS.</div>
+
+<div id="tabs-row" style="display:flex;gap:8px;margin-bottom:28px;flex-wrap:wrap;"></div>
+
+<!-- ═══════════════ USERS ═══════════════ -->
+<div id="tab-users" style="display:none">
+    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+        <button class="btn btn-primary"   id="su-btn-list"   onclick="switchUsersTab('list')">Liste</button>
+        <button class="btn btn-secondary" id="su-btn-create" onclick="switchUsersTab('create')">+ Créer</button>
+        <button class="btn btn-secondary" id="su-btn-badge"  onclick="switchUsersTab('badge')">Assigner badge</button>
+    </div>
+
+    <!-- A1: List users -->
+    <div id="sutab-list">
+        <div id="ulist-loading" class="alert alert-info"><span class="spinner"></span> Chargement…</div>
+        <div id="ulist-content"></div>
+    </div>
+
+    <!-- A2: Create user -->
+    <div id="sutab-create" style="display:none">
+        <div class="card">
+            <h2>Créer un utilisateur</h2>
+            <div id="uc-alert" class="alert alert-error hidden"></div>
+            <div class="form-row">
+                <div><label>Prénom</label><input type="text" id="uc-fn" placeholder="Prénom"></div>
+                <div><label>Nom</label><input type="text" id="uc-ln" placeholder="Nom"></div>
+            </div>
+            <label>Identifiant</label><input type="text" id="uc-user" placeholder="username">
+            <label>Rôle</label>
+            <select id="uc-role">
+                <option value="member">member</option>
+                <option value="auditor">auditor</option>
+                <option value="manager">manager</option>
+                <option value="admin">admin</option>
+                <option value="superadmin">superadmin</option>
+            </select>
+            <button class="btn btn-primary" style="margin-top:8px;" onclick="createUser()">
+                <span id="uc-spinner" class="spinner hidden"></span> Créer l'utilisateur
+            </button>
+        </div>
+    </div>
+
+    <!-- A5/A6: Assign badge -->
+    <div id="sutab-badge" style="display:none">
+        <div class="card">
+            <h2>Créer un badge NFC</h2>
+            <p style="color:var(--muted);font-size:13px;margin-bottom:16px;">Scannez le badge physique puis associez-le à un utilisateur.</p>
+            <div id="badge-alert" class="alert alert-error hidden"></div>
+            <label>Utilisateur</label>
+            <select id="badge-user-sel"></select>
+            <div style="margin-top:12px;">
+                <button class="btn btn-primary" onclick="startBadgeScan()">
+                    <span id="badge-nfc-icon">🪪</span> <span id="badge-nfc-text">Scanner le badge NFC</span>
+                </button>
+            </div>
+            <div id="badge-qr-card" class="hidden" style="margin-top:20px;text-align:center;">
+                <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">QR code TOTP à remettre à l'utilisateur :</p>
+                <img id="badge-qr-img" src="" alt="QR TOTP" style="max-width:240px;border-radius:12px;">
+                <div id="badge-qr-uri" class="key-box" style="margin-top:12px;font-size:11px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ BADGES ═══════════════ -->
+<div id="tab-badges" style="display:none">
+    <div id="blist-loading" class="alert alert-info"><span class="spinner"></span> Chargement…</div>
+    <div id="blist-content"></div>
+</div>
+
+<!-- ═══════════════ VOTES ═══════════════ -->
+<div id="tab-votes" style="display:none">
+    <div style="display:flex;gap:8px;margin-bottom:20px;">
+        <button class="btn btn-primary"   id="sv-btn-list" onclick="switchVoteTab('list')">Liste</button>
+        <button class="btn btn-secondary" id="sv-btn-new"  onclick="switchVoteTab('new')">+ Nouveau vote</button>
+    </div>
+    <div id="svtab-list">
+        <div id="vlist-loading" class="alert alert-info"><span class="spinner"></span> Chargement…</div>
+        <div id="vlist-content"></div>
+    </div>
+    <div id="svtab-new" style="display:none">
+        <div class="card">
+            <h2>Créer un vote</h2>
+            <div id="nv-alert" class="alert alert-error hidden"></div>
+            <label>Question</label><input type="text" id="nv-q" placeholder="Question du vote">
+            <label>Description</label><textarea id="nv-d" rows="2" placeholder="Optionnel"></textarea>
+            <div class="form-row">
+                <div>
+                    <label>Type</label>
+                    <select id="nv-type" onchange="document.getElementById('nv-answers-row').style.display=this.value==='multiple'?'':'none'">
+                        <option value="boolean">Oui / Non</option>
+                        <option value="multiple">Choix multiple</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Mode</label>
+                    <select id="nv-mode">
+                        <option value="confidential">Confidentiel</option>
+                        <option value="auditable">Auditable</option>
+                    </select>
+                </div>
+            </div>
+            <div id="nv-answers-row" style="display:none">
+                <label>Réponses (une par ligne)</label>
+                <textarea id="nv-answers" rows="3" placeholder="Réponse A&#10;Réponse B&#10;Réponse C"></textarea>
+            </div>
+            <label>Date d'expiration</label><input type="date" id="nv-date">
+            <label>Assigner à</label>
+            <select id="nv-assign" onchange="document.getElementById('nv-ids-row').style.display=this.value==='select'?'':'none'">
+                <option value="all">Tous les utilisateurs</option>
+                <option value="select">Sélectionner des IDs…</option>
+            </select>
+            <div id="nv-ids-row" style="display:none">
+                <label>IDs utilisateurs (virgules)</label>
+                <input type="text" id="nv-ids" placeholder="1,2,3">
+            </div>
+            <button class="btn btn-primary" onclick="createVote()">
+                <span id="nv-spinner" class="spinner hidden"></span> Créer le vote
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ MAINTENANCE ═══════════════ -->
+<div id="tab-maint" style="display:none">
+    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+        <button class="btn btn-primary"   id="sm-btn-keys"   onclick="switchMaintTab('keys')">🔑 Clés</button>
+        <button class="btn btn-secondary" id="sm-btn-logs"   onclick="switchMaintTab('logs')">📋 Logs</button>
+        <button class="btn btn-secondary" id="sm-btn-backup" onclick="switchMaintTab('backup')">💾 Backup</button>
+    </div>
+
+    <!-- D1-D3: Key generation -->
+    <div id="smtab-keys">
+        <div class="card">
+            <h2>Générer une clé Fernet</h2>
+            <p style="color:var(--muted);font-size:13px;margin-bottom:16px;">Génère une nouvelle clé et l'écrit dans le fichier <code>.env</code> approprié.</p>
+            <div id="key-alert" class="alert hidden"></div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                <button class="btn btn-primary"   onclick="genKey('totp')">D1 — Clé TOTP</button>
+                <button class="btn btn-secondary" onclick="genKey('vote')">D2 — Clé vote</button>
+                <button class="btn btn-secondary" onclick="genKey('answer')">D3 — Clé réponse</button>
+            </div>
+            <div id="key-result" class="hidden" style="margin-top:16px;">
+                <p style="font-size:13px;color:var(--muted);margin-bottom:8px;">Nouvelle clé :</p>
+                <div class="key-box" id="key-value"></div>
+                <p style="font-size:12px;color:var(--accent);margin-top:8px;">⚠️ Conservez cette clé en lieu sûr. Elle ne sera plus affichée.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- E1: Logs -->
+    <div id="smtab-logs" style="display:none">
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h2 style="margin:0;">Journal d'activité</h2>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select id="logs-n" onchange="loadLogs()">
+                        <option value="50">50 lignes</option>
+                        <option value="100" selected>100 lignes</option>
+                        <option value="200">200 lignes</option>
+                    </select>
+                    <button class="btn btn-secondary btn-sm" onclick="loadLogs()">Actualiser</button>
+                </div>
+            </div>
+            <div id="logs-loading" class="alert alert-info hidden"><span class="spinner"></span> Chargement…</div>
+            <div id="logs-content" style="max-height:400px;overflow-y:auto;"></div>
+        </div>
+    </div>
+
+    <!-- E3: Backup -->
+    <div id="smtab-backup" style="display:none">
+        <div class="card">
+            <h2>Sauvegarde de la base de données</h2>
+            <p style="color:var(--muted);font-size:13px;margin-bottom:20px;">Crée une copie de sauvegarde horodatée de la base de données SQLite.</p>
+            <div id="backup-alert" class="alert hidden"></div>
+            <button class="btn btn-primary" onclick="runBackup()">
+                <span id="backup-spinner" class="spinner hidden"></span> Lancer la sauvegarde
+            </button>
+            <div id="backup-result" class="hidden" style="margin-top:16px;">
+                <p style="font-size:13px;color:var(--muted);margin-bottom:6px;">Fichier créé :</p>
+                <div class="key-box" id="backup-path"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ SECRETS ═══════════════ -->
+<div id="tab-secrets" style="display:none">
+    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" id="ss-btn-mine"   onclick="switchSecTab('mine')">Mes fragments</button>
+        <button class="btn btn-primary"   id="ss-btn-create" onclick="switchSecTab('create')">+ Créer</button>
+        <button class="btn btn-secondary" id="ss-btn-manage" onclick="switchSecTab('manage')">Gérer</button>
+        <button class="btn btn-secondary" id="ss-btn-recon"  onclick="switchSecTab('recon')">Reconstruire</button>
+    </div>
+    <div id="sstab-mine">
+        <div id="mine-loading" class="alert alert-info"><span class="spinner"></span></div>
+        <div id="mine-content"></div>
+    </div>
+    <div id="sstab-create" style="display:none">
+        <div class="card">
+            <h2>Créer un secret partagé</h2>
+            <div id="sc-alert" class="alert alert-error hidden"></div>
+            <label>Label</label><input type="text" id="sc-label" placeholder="ex: clé-backup-2025">
+            <label>Secret</label><input type="password" id="sc-secret" placeholder="Valeur secrète">
+            <label>Seuil k (parts minimum pour reconstruire)</label><input type="number" id="sc-k" min="2" value="2">
+            <label>Badge IDs des dépositaires (virgules)</label><input type="text" id="sc-badges" placeholder="1,3,5">
+            <button class="btn btn-primary" onclick="createSecret()">
+                <span id="sc-spinner" class="spinner hidden"></span> Créer et distribuer
+            </button>
+        </div>
+    </div>
+    <div id="sstab-manage" style="display:none">
+        <div id="sm-loading" class="alert alert-info"><span class="spinner"></span></div>
+        <div id="sm-content"></div>
+    </div>
+    <div id="sstab-recon" style="display:none">
+        <div class="card">
+            <h2>Reconstruire un secret</h2>
+            <div id="sr-alert" class="alert alert-error hidden"></div>
+            <label>Sélectionnez le secret</label>
+            <select id="sr-select" onchange="loadCustodians(this.value)"><option value="">— Choisir —</option></select>
+            <div id="sr-custodians" style="display:none;margin-top:16px;">
+                <p style="color:var(--muted);font-size:13px;margin-bottom:12px;">Dépositaires : collectez les authentifications une par une.</p>
+                <div id="sr-cust-list"></div>
+                <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
+                    <p style="font-size:13px;margin-bottom:10px;"><strong id="sr-collected">0</strong> / <strong id="sr-needed">?</strong> parts collectées</p>
+                    <button class="btn btn-secondary" onclick="addAuthenticator()" id="sr-add-btn">+ Ajouter un dépositaire</button>
+                    <button class="btn btn-primary" id="sr-recon-btn" onclick="reconstruct()" style="display:none;margin-left:8px;">
+                        <span id="sr-spinner" class="spinner hidden"></span> Reconstruire
+                    </button>
+                </div>
+                <div id="sr-result" class="alert alert-success hidden" style="margin-top:16px;word-break:break-all;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal résultats vote -->
+<div class="modal-overlay" id="results-modal">
+<div class="modal">
+    <h2 id="rm-title"></h2>
+    <div id="rm-content"></div>
+    <div style="text-align:right;margin-top:20px;"><button class="btn btn-secondary" onclick="closeResultsModal()">Fermer</button></div>
+</div>
+</div>
+
+<!-- Modal édition utilisateur -->
+<div class="modal-overlay" id="edit-user-modal">
+<div class="modal">
+    <h2>Modifier l'utilisateur</h2>
+    <div id="eu-alert" class="alert alert-error hidden"></div>
+    <input type="hidden" id="eu-id">
+    <div class="form-row">
+        <div><label>Prénom</label><input type="text" id="eu-fn"></div>
+        <div><label>Nom</label><input type="text" id="eu-ln"></div>
+    </div>
+    <label>Identifiant</label><input type="text" id="eu-user">
+    <label>Rôle</label>
+    <select id="eu-role">
+        <option value="member">member</option>
+        <option value="auditor">auditor</option>
+        <option value="manager">manager</option>
+        <option value="admin">admin</option>
+        <option value="superadmin">superadmin</option>
+    </select>
+    <div style="display:flex;justify-content:space-between;margin-top:16px;">
+        <button class="btn btn-secondary" onclick="closeEditModal()">Annuler</button>
+        <button class="btn btn-primary" onclick="saveEditUser()">
+            <span id="eu-spinner" class="spinner hidden"></span> Enregistrer
+        </button>
+    </div>
+</div>
+</div>
+
+<!-- Modal NFC (reconstruction & badge) -->
+<div class="modal-overlay" id="nfc-modal">
+<div class="modal">
+    <h2 id="nfc-m-title">Authentification dépositaire</h2>
+    <div class="nfc-zone">
+        <span class="nfc-icon" id="nfc-m-icon">🪪</span>
+        <p style="font-weight:600;margin-bottom:6px;" id="nfc-m-text">Activez le lecteur NFC</p>
+        <button class="btn btn-primary" id="nfc-m-btn" onclick="startReconNfc()">Activer le lecteur NFC</button>
+    </div>
+    <div id="nfc-m-totp" style="display:none">
+        <label>Code TOTP du dépositaire</label>
+        <input type="text" id="nfc-m-code" maxlength="6" inputmode="numeric" placeholder="6 chiffres">
+        <div style="display:flex;justify-content:space-between;margin-top:12px;">
+            <button class="btn btn-secondary" onclick="closeNfcModal()">Annuler</button>
+            <button class="btn btn-primary" onclick="confirmAuthenticator()">Ajouter</button>
+        </div>
+    </div>
+    <div style="text-align:center;margin-top:8px;" id="nfc-m-cancel-row">
+        <button class="btn btn-secondary btn-sm" onclick="closeNfcModal()">Annuler</button>
+    </div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let _authenticators=[], _reconSecretId=null, _currentNfcId=null;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async()=>{
+    await new Promise(r=>setTimeout(r,100));
+    buildTabs();
+})();
+
+function buildTabs(){
+    const TABS=[
+        {id:'users',   label:'👥 Utilisateurs'},
+        {id:'badges',  label:'🪪 Badges'},
+        {id:'votes',   label:'🗳️ Votes'},
+        {id:'maint',   label:'🔧 Maintenance'},
+        {id:'secrets', label:'🔐 Secrets'},
+    ];
+    const row=document.getElementById('tabs-row');
+    let first=true;
+    TABS.forEach(t=>{
+        const btn=document.createElement('button');
+        btn.className=first?'btn btn-primary':'btn btn-secondary';
+        btn.id='tab-btn-'+t.id;
+        btn.textContent=t.label;
+        btn.onclick=()=>openTab(t.id);
+        row.appendChild(btn);
+        document.getElementById('tab-'+t.id).style.display=first?'':'none';
+        if(first){loadTab(t.id);first=false;}
+    });
+}
+
+const ALL_TABS=['users','badges','votes','maint','secrets'];
+function openTab(id){
+    ALL_TABS.forEach(x=>{
+        const el=document.getElementById('tab-'+x);
+        const btn=document.getElementById('tab-btn-'+x);
+        if(el) el.style.display=x===id?'':'none';
+        if(btn) btn.className=x===id?'btn btn-primary':'btn btn-secondary';
+    });
+    loadTab(id);
+}
+function loadTab(id){
+    if(id==='users')   {switchUsersTab('list');}
+    if(id==='badges')  loadBadgesList();
+    if(id==='votes')   loadVotesList();
+    if(id==='secrets') loadSecretsMine();
+}
+
+// ═══════════════ USERS ═══════════════════════════════════════════════════════
+function switchUsersTab(t){
+    ['list','create','badge'].forEach(x=>{
+        document.getElementById('sutab-'+x).style.display=x===t?'':'none';
+        document.getElementById('su-btn-'+x).className=x===t?'btn btn-primary':'btn btn-secondary';
+    });
+    if(t==='list')  loadUsersList();
+    if(t==='badge') populateBadgeUserSelect();
+}
+
+async function loadUsersList(){
+    document.getElementById('ulist-loading').classList.remove('hidden');
+    document.getElementById('ulist-content').innerHTML='';
+    const {ok,data}=await api('GET','users');
+    document.getElementById('ulist-loading').classList.add('hidden');
+    if(!ok||!data.length){document.getElementById('ulist-content').innerHTML='<div class="alert alert-info">Aucun utilisateur.</div>';return;}
+    document.getElementById('ulist-content').innerHTML=`<div class="card"><table>
+        <thead><tr><th>#</th><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Badge</th><th>Actions</th></tr></thead>
+        <tbody>${data.map(u=>`<tr>
+            <td>${u.user_id}</td>
+            <td>${u.first_name} ${u.last_name}</td>
+            <td style="color:var(--cyan)">@${u.username}</td>
+            <td><span style="background:rgba(76,201,240,0.1);border:1px solid rgba(76,201,240,0.2);border-radius:6px;padding:2px 8px;font-size:12px;color:var(--cyan)">${u.role}</span></td>
+            <td>${u.badge_id?'<span class="badge-status-active">#'+u.badge_id+'</span>':'<span class="badge-status-revoked">Non</span>'}</td>
+            <td style="display:flex;gap:4px;flex-wrap:wrap;">
+                <button class="btn btn-secondary btn-sm" onclick="openEditUser(${u.user_id},'${esc(u.first_name)}','${esc(u.last_name)}','${esc(u.username)}','${u.role}')">Éditer</button>
+                <button class="btn btn-danger btn-sm"    onclick="deleteUser(${u.user_id},'${esc(u.username)}')">Suppr.</button>
+            </td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function createUser(){
+    const fn=document.getElementById('uc-fn').value.trim();
+    const ln=document.getElementById('uc-ln').value.trim();
+    const user=document.getElementById('uc-user').value.trim();
+    const role=document.getElementById('uc-role').value;
+    if(!fn||!ln||!user){showAlert('uc-alert','error','Tous les champs sont requis.');return;}
+    document.getElementById('uc-spinner').classList.remove('hidden');
+    const {ok,data}=await api('POST','users',{first_name:fn,last_name:ln,username:user,role});
+    document.getElementById('uc-spinner').classList.add('hidden');
+    if(!ok){showAlert('uc-alert','error',data.error||'Erreur.');return;}
+    showAlert('uc-alert','success','✅ Utilisateur #'+data.user_id+' créé. Utilisez l\'onglet "Assigner badge" pour lui attribuer un badge NFC.');
+    ['uc-fn','uc-ln','uc-user'].forEach(id=>document.getElementById(id).value='');
+    loadUsersList();
+}
+
+function openEditUser(id,fn,ln,user,role){
+    document.getElementById('eu-id').value=id;
+    document.getElementById('eu-fn').value=fn;
+    document.getElementById('eu-ln').value=ln;
+    document.getElementById('eu-user').value=user;
+    document.getElementById('eu-role').value=role;
+    document.getElementById('eu-alert').classList.add('hidden');
+    document.getElementById('edit-user-modal').classList.add('open');
+}
+
+async function saveEditUser(){
+    const id=document.getElementById('eu-id').value;
+    const body={
+        first_name:document.getElementById('eu-fn').value.trim(),
+        last_name:document.getElementById('eu-ln').value.trim(),
+        username:document.getElementById('eu-user').value.trim(),
+        role:document.getElementById('eu-role').value
+    };
+    document.getElementById('eu-spinner').classList.remove('hidden');
+    const {ok,data}=await api('PUT',`users/${id}`,body);
+    document.getElementById('eu-spinner').classList.add('hidden');
+    if(!ok){document.getElementById('eu-alert').textContent=data.error||'Erreur.';document.getElementById('eu-alert').classList.remove('hidden');return;}
+    closeEditModal();
+    loadUsersList();
+}
+
+async function deleteUser(id,username){
+    if(!confirm(`Supprimer l'utilisateur @${username} ? Cette action est irréversible.`)) return;
+    const {ok,data}=await api('DELETE',`users/${id}`);
+    if(ok) loadUsersList();
+    else alert(data.error||'Erreur.');
+}
+function closeEditModal(){document.getElementById('edit-user-modal').classList.remove('open');}
+
+async function populateBadgeUserSelect(){
+    document.getElementById('badge-alert').classList.add('hidden');
+    document.getElementById('badge-qr-card').classList.add('hidden');
+    const sel=document.getElementById('badge-user-sel');
+    sel.innerHTML='<option value="">Chargement…</option>';
+    const {ok,data}=await api('GET','users');
+    sel.innerHTML='<option value="">— Choisir —</option>';
+    if(ok) data.forEach(u=>{const o=document.createElement('option');o.value=u.user_id;o.textContent=`@${u.username} — ${u.first_name} ${u.last_name}`;sel.appendChild(o);});
+}
+
+async function startBadgeScan(){
+    const userId=document.getElementById('badge-user-sel').value;
+    if(!userId){showAlert('badge-alert','error','Sélectionnez un utilisateur.');return;}
+    document.getElementById('badge-nfc-icon').textContent='🔄';
+    document.getElementById('badge-nfc-text').textContent='En attente du badge…';
+    document.getElementById('badge-alert').classList.add('hidden');
+    document.getElementById('badge-qr-card').classList.add('hidden');
+    try{
+        const r=await fetch('/api/auth/scan-badge',{method:'POST',signal:AbortSignal.timeout(35000)});
+        const d=await r.json();
+        document.getElementById('badge-nfc-icon').textContent='🪪';
+        document.getElementById('badge-nfc-text').textContent='Scanner le badge NFC';
+        if(!r.ok){showAlert('badge-alert','error',d.error||'Erreur NFC.');return;}
+        const {ok:bOk,data:bData}=await api('POST','badges',{user_id:parseInt(userId),header_id:d.header_id});
+        if(!bOk){showAlert('badge-alert','error',bData.error||'Erreur création badge.');return;}
+        if(bData.qr_b64){
+            document.getElementById('badge-qr-img').src='data:image/png;base64,'+bData.qr_b64;
+            document.getElementById('badge-qr-uri').textContent=bData.totp_uri||'';
+            document.getElementById('badge-qr-card').classList.remove('hidden');
+        }
+        showAlert('badge-alert','success','✅ Badge créé et associé.');
+    }catch(e){
+        document.getElementById('badge-nfc-icon').textContent='🪪';
+        document.getElementById('badge-nfc-text').textContent='Scanner le badge NFC';
+        showAlert('badge-alert','error','Délai dépassé — réessayez.');
+    }
+}
+
+// ═══════════════ BADGES ══════════════════════════════════════════════════════
+async function loadBadgesList(){
+    document.getElementById('blist-loading').classList.remove('hidden');
+    document.getElementById('blist-content').innerHTML='';
+    const {ok,data}=await api('GET','badges');
+    document.getElementById('blist-loading').classList.add('hidden');
+    if(!ok||!data.length){document.getElementById('blist-content').innerHTML='<div class="alert alert-info">Aucun badge.</div>';return;}
+    document.getElementById('blist-content').innerHTML=`<div class="card"><table>
+        <thead><tr><th>#</th><th>Utilisateur</th><th>Statut</th><th>Créé le</th><th>Actions</th></tr></thead>
+        <tbody>${data.map(b=>`<tr>
+            <td>${b.badge_id}</td>
+            <td style="color:var(--cyan)">@${b.username||'—'}</td>
+            <td class="${!b.is_revoked?'badge-status-active':'badge-status-revoked'}">${b.is_revoked?'révoqué':'actif'}</td>
+            <td style="color:var(--muted);font-size:12px">${b.issued_at?new Date(b.issued_at).toLocaleDateString('fr'):'—'}</td>
+            <td>${!b.is_revoked?`<button class="btn btn-danger btn-sm" onclick="revokeBadge(${b.badge_id})">Révoquer</button>`:'—'}</td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function revokeBadge(id){
+    if(!confirm(`Révoquer le badge #${id} ?`)) return;
+    const {ok,data}=await api('PUT',`badges/${id}`,{is_revoked:true,revoked_reason:'Révocation manuelle'});
+    if(ok) loadBadgesList();
+    else alert(data.error||'Erreur.');
+}
+
+// ═══════════════ VOTES ═══════════════════════════════════════════════════════
+function switchVoteTab(t){
+    document.getElementById('svtab-list').style.display=t==='list'?'':'none';
+    document.getElementById('svtab-new').style.display=t==='new'?'':'none';
+    document.getElementById('sv-btn-list').className=t==='list'?'btn btn-primary':'btn btn-secondary';
+    document.getElementById('sv-btn-new').className=t==='new'?'btn btn-primary':'btn btn-secondary';
+}
+
+async function loadVotesList(){
+    document.getElementById('vlist-loading').classList.remove('hidden');
+    document.getElementById('vlist-content').innerHTML='';
+    const {ok,data}=await api('GET','votes');
+    document.getElementById('vlist-loading').classList.add('hidden');
+    if(!ok||!data.length){document.getElementById('vlist-content').innerHTML='<div class="alert alert-info">Aucun vote.</div>';return;}
+    document.getElementById('vlist-content').innerHTML=`<div class="card"><table>
+        <thead><tr><th>#</th><th>Question</th><th>Mode</th><th>Statut</th><th>Actions</th></tr></thead>
+        <tbody>${data.map(v=>`<tr>
+            <td>${v.vote_id}</td>
+            <td>${v.question}</td>
+            <td><span class="mode-pill mode-${v.vote_mode}">${v.vote_mode}</span></td>
+            <td class="${v.vote_status==='open'?'badge-status-active':'badge-status-revoked'}">${v.vote_status==='open'?'Ouvert':'Fermé'}</td>
+            <td style="display:flex;gap:4px;">
+                <button class="btn btn-secondary btn-sm" onclick="showResults(${v.vote_id},'${esc(v.question)}')">Résultats</button>
+                ${v.vote_status==='open'?`<button class="btn btn-danger btn-sm" onclick="closeVote(${v.vote_id})">Clôturer</button>`:''}
+            </td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function createVote(){
+    const q=document.getElementById('nv-q').value.trim();
+    if(!q){showAlert('nv-alert','error','Question requise.');return;}
+    document.getElementById('nv-spinner').classList.remove('hidden');
+    const type=document.getElementById('nv-type').value;
+    const answers=type==='multiple'?document.getElementById('nv-answers').value.split('\n').map(s=>s.trim()).filter(Boolean):['OUI','NON'];
+    const assignVal=document.getElementById('nv-assign').value;
+    const body={
+        question:q,description_text:document.getElementById('nv-d').value,
+        vote_type:type,vote_mode:document.getElementById('nv-mode').value,
+        is_boolean:type==='boolean',
+        expiration_date:document.getElementById('nv-date').value||undefined,
+        answers,
+        assigned_user_ids:assignVal==='all'?'all':document.getElementById('nv-ids').value.split(',').map(s=>parseInt(s.trim())).filter(Boolean),
+    };
+    const {ok,data}=await api('POST','votes',body);
+    document.getElementById('nv-spinner').classList.add('hidden');
+    if(ok){showAlert('nv-alert','success','✅ Vote créé (#'+data.vote_id+')');loadVotesList();}
+    else showAlert('nv-alert','error',data.error||'Erreur.');
+}
+
+async function closeVote(id){
+    if(!confirm('Clôturer ce vote ?')) return;
+    const {ok,data}=await api('POST',`votes/${id}/close`);
+    if(ok) loadVotesList();
+    else alert(data.error||'Erreur.');
+}
+
+async function showResults(id,q){
+    document.getElementById('rm-title').textContent=q;
+    document.getElementById('rm-content').innerHTML='<span class="spinner"></span>';
+    document.getElementById('results-modal').classList.add('open');
+    const {ok,data}=await api('GET',`votes/${id}/results`);
+    if(!ok){document.getElementById('rm-content').innerHTML='<div class="alert alert-error">'+(data.error||'Erreur')+'</div>';return;}
+    const total=data.total||1;
+    document.getElementById('rm-content').innerHTML=`<p style="color:var(--muted);margin-bottom:16px;">${total} vote(s)</p>`+
+    Object.values(data.counts||{}).map(c=>`
+        <div style="margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:14px;">
+                <span style="font-weight:600;">${c.text}</span>
+                <span style="color:var(--muted)">${c.count} (${Math.round(c.count/total*100)}%)</span>
+            </div>
+            <div style="height:8px;background:rgba(255,255,255,0.08);border-radius:4px;">
+                <div style="height:100%;width:${Math.round(c.count/total*100)}%;background:var(--cyan);border-radius:4px;"></div>
+            </div>
+        </div>`).join('');
+}
+function closeResultsModal(){document.getElementById('results-modal').classList.remove('open');}
+
+// ═══════════════ MAINTENANCE ══════════════════════════════════════════════════
+function switchMaintTab(t){
+    ['keys','logs','backup'].forEach(x=>{
+        document.getElementById('smtab-'+x).style.display=x===t?'':'none';
+        document.getElementById('sm-btn-'+x).className=x===t?'btn btn-primary':'btn btn-secondary';
+    });
+    if(t==='logs') loadLogs();
+}
+
+async function genKey(type){
+    document.getElementById('key-result').classList.add('hidden');
+    showAlert('key-alert','info','Génération en cours…');
+    const {ok,data}=await api('POST','keys/generate',{type});
+    if(!ok){showAlert('key-alert','error',data.error||'Erreur.');return;}
+    document.getElementById('key-alert').classList.add('hidden');
+    document.getElementById('key-value').textContent=data.key;
+    document.getElementById('key-result').classList.remove('hidden');
+}
+
+async function loadLogs(){
+    const n=document.getElementById('logs-n').value;
+    document.getElementById('logs-loading').classList.remove('hidden');
+    document.getElementById('logs-content').innerHTML='';
+    const {ok,data}=await api('GET',`logs?n=${n}`);
+    document.getElementById('logs-loading').classList.add('hidden');
+    if(!ok){document.getElementById('logs-content').innerHTML='<div class="alert alert-error">'+(data.error||'Erreur')+'</div>';return;}
+    const lines=Array.isArray(data)?data:(data.lines||[]);
+    document.getElementById('logs-content').innerHTML=lines.length
+        ?lines.map(l=>`<div class="log-line">${escHtml(l)}</div>`).join('')
+        :'<div class="alert alert-info">Aucune entrée.</div>';
+}
+
+async function runBackup(){
+    document.getElementById('backup-spinner').classList.remove('hidden');
+    document.getElementById('backup-result').classList.add('hidden');
+    showAlert('backup-alert','info','Sauvegarde en cours…');
+    const {ok,data}=await api('POST','maintenance/backup');
+    document.getElementById('backup-spinner').classList.add('hidden');
+    if(!ok){showAlert('backup-alert','error',data.error||'Erreur.');return;}
+    showAlert('backup-alert','success','✅ Sauvegarde effectuée.');
+    document.getElementById('backup-path').textContent=data.path||data.backup_path||'OK';
+    document.getElementById('backup-result').classList.remove('hidden');
+}
+
+// ═══════════════ SECRETS ══════════════════════════════════════════════════════
+function switchSecTab(t){
+    ['mine','create','manage','recon'].forEach(x=>{
+        document.getElementById('sstab-'+x).style.display=x===t?'':'none';
+        document.getElementById('ss-btn-'+x).className=x===t?'btn btn-primary':'btn btn-secondary';
+    });
+    if(t==='manage') loadSecretsManage();
+    if(t==='recon')  loadSecretsForRecon();
+}
+
+async function loadSecretsMine(){
+    const {ok,data}=await api('GET','secrets/mine');
+    document.getElementById('mine-loading').classList.add('hidden');
+    if(!ok){document.getElementById('mine-content').innerHTML='<div class="alert alert-error">'+(data.error||'')+'</div>';return;}
+    if(!data.length){document.getElementById('mine-content').innerHTML='<div class="alert alert-info">Aucun fragment.</div>';return;}
+    document.getElementById('mine-content').innerHTML=`<div class="card"><table>
+        <thead><tr><th>Label</th><th>Seuil</th><th>Utilisé</th></tr></thead>
+        <tbody>${data.map(s=>`<tr><td><strong>${s.label}</strong></td><td>${s.k}/${s.n}</td>
+            <td>${s.secret_used?'<span class="badge-status-revoked">Oui</span>':'<span class="badge-status-active">Non</span>'}</td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function createSecret(){
+    const label=document.getElementById('sc-label').value.trim();
+    const secret=document.getElementById('sc-secret').value;
+    const k=parseInt(document.getElementById('sc-k').value);
+    const badge_ids=document.getElementById('sc-badges').value.split(',').map(s=>parseInt(s.trim())).filter(Boolean);
+    if(!label||!secret||!badge_ids.length){showAlert('sc-alert','error','Tous les champs sont requis.');return;}
+    document.getElementById('sc-spinner').classList.remove('hidden');
+    const {ok,data}=await api('POST','secrets',{label,secret,k,badge_ids});
+    document.getElementById('sc-spinner').classList.add('hidden');
+    if(ok){showAlert('sc-alert','success','✅ Secret créé (#'+data.secret_id+')');}
+    else showAlert('sc-alert','error',data.error||'Erreur.');
+}
+
+async function loadSecretsManage(){
+    document.getElementById('sm-loading').classList.remove('hidden');
+    document.getElementById('sm-content').innerHTML='';
+    const {ok,data}=await api('GET','secrets');
+    document.getElementById('sm-loading').classList.add('hidden');
+    if(!ok||!data.length){document.getElementById('sm-content').innerHTML='<div class="alert alert-info">Aucun secret.</div>';return;}
+    document.getElementById('sm-content').innerHTML=`<div class="card"><table>
+        <thead><tr><th>Label</th><th>Seuil</th><th>Utilisé</th><th></th></tr></thead>
+        <tbody>${data.map(s=>`<tr>
+            <td><strong>${s.label}</strong></td><td>${s.k}/${s.n}</td>
+            <td>${s.used?'<span class="badge-status-revoked">Oui</span>':'<span class="badge-status-active">Non</span>'}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="deleteSecret('${esc(s.label)}')">Supprimer</button></td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function deleteSecret(label){
+    if(!confirm(`Supprimer le secret "${label}" et toutes ses parts ?`)) return;
+    const {ok,data}=await api('DELETE',`secrets/${encodeURIComponent(label)}`);
+    if(ok) loadSecretsManage();
+    else alert(data.error||'Erreur.');
+}
+
+async function loadSecretsForRecon(){
+    const {ok,data}=await api('GET','secrets');
+    const sel=document.getElementById('sr-select');
+    sel.innerHTML='<option value="">— Choisir —</option>';
+    if(ok) data.forEach(s=>{const o=document.createElement('option');o.value=s.secret_id;o.textContent=`${s.label} (${s.k}/${s.n})`;sel.appendChild(o);});
+}
+
+async function loadCustodians(id){
+    _reconSecretId=id?parseInt(id):null;
+    _authenticators=[];
+    document.getElementById('sr-custodians').style.display=id?'':'none';
+    if(!id) return;
+    const {ok,data}=await api('GET',`secrets/${id}/custodians`);
+    if(!ok) return;
+    const selOpt=document.getElementById('sr-select').options[document.getElementById('sr-select').selectedIndex];
+    const match=(selOpt.textContent.match(/(\d+)\/(\d+)/)||[]);
+    document.getElementById('sr-needed').textContent=match[1]||'?';
+    document.getElementById('sr-collected').textContent='0';
+    document.getElementById('sr-recon-btn').style.display='none';
+    document.getElementById('sr-result').classList.add('hidden');
+    document.getElementById('sr-cust-list').innerHTML=data.map(c=>`
+        <div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;">
+            🪪 <strong>${c.first_name} ${c.last_name}</strong> (@${c.username}) — badge #${c.badge_id}
+        </div>`).join('');
+}
+
+function addAuthenticator(){
+    _currentNfcId=null;
+    document.getElementById('nfc-m-title').textContent='Authentification dépositaire';
+    document.getElementById('nfc-m-icon').className='nfc-icon';
+    document.getElementById('nfc-m-icon').textContent='🪪';
+    document.getElementById('nfc-m-text').textContent='Activez le lecteur NFC';
+    document.getElementById('nfc-m-btn').style.display='';
+    document.getElementById('nfc-m-btn').textContent='Activer le lecteur NFC';
+    document.getElementById('nfc-m-totp').style.display='none';
+    document.getElementById('nfc-m-cancel-row').style.display='';
+    document.getElementById('nfc-modal').classList.add('open');
+}
+
+async function startReconNfc(){
+    document.getElementById('nfc-m-btn').style.display='none';
+    document.getElementById('nfc-m-icon').className='nfc-icon scanning';
+    document.getElementById('nfc-m-text').textContent='En attente du badge…';
+    document.getElementById('nfc-m-cancel-row').style.display='none';
+    try{
+        const r=await fetch('/api/auth/scan-badge',{method:'POST',signal:AbortSignal.timeout(35000)});
+        const d=await r.json();
+        if(!r.ok){
+            document.getElementById('nfc-m-icon').textContent='❌';
+            document.getElementById('nfc-m-text').textContent=d.error||'Erreur';
+            document.getElementById('nfc-m-btn').style.display='';
+            document.getElementById('nfc-m-cancel-row').style.display='';
+            return;
+        }
+        _currentNfcId=d.header_id;
+        document.getElementById('nfc-m-icon').className='nfc-icon';
+        document.getElementById('nfc-m-icon').textContent='✅';
+        document.getElementById('nfc-m-text').textContent='Badge détecté — entrez le TOTP';
+        document.getElementById('nfc-m-totp').style.display='';
+        document.getElementById('nfc-m-cancel-row').style.display='none';
+        document.getElementById('nfc-m-code').value='';
+        document.getElementById('nfc-m-code').focus();
+    }catch(e){
+        document.getElementById('nfc-m-icon').textContent='⏱';
+        document.getElementById('nfc-m-text').textContent='Délai dépassé';
+        document.getElementById('nfc-m-btn').style.display='';
+        document.getElementById('nfc-m-btn').textContent='Réessayer';
+        document.getElementById('nfc-m-cancel-row').style.display='';
+    }
+}
+
+function confirmAuthenticator(){
+    const code=document.getElementById('nfc-m-code').value.trim();
+    if(!code||!_currentNfcId) return;
+    _authenticators.push({header_id:_currentNfcId,totp_code:code});
+    document.getElementById('sr-collected').textContent=_authenticators.length;
+    const needed=parseInt(document.getElementById('sr-needed').textContent)||0;
+    if(_authenticators.length>=needed) document.getElementById('sr-recon-btn').style.display='';
+    closeNfcModal();
+}
+function closeNfcModal(){document.getElementById('nfc-modal').classList.remove('open');}
+
+async function reconstruct(){
+    document.getElementById('sr-spinner').classList.remove('hidden');
+    document.getElementById('sr-alert').classList.add('hidden');
+    const {ok,data}=await api('POST',`secrets/${_reconSecretId}/reconstruct`,{authenticators:_authenticators});
+    document.getElementById('sr-spinner').classList.add('hidden');
+    if(ok){
+        document.getElementById('sr-result').textContent='🔓 Secret : '+data.secret;
+        document.getElementById('sr-result').classList.remove('hidden');
+    } else {
+        document.getElementById('sr-alert').textContent=data.error||'Erreur.';
+        document.getElementById('sr-alert').classList.remove('hidden');
+    }
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+function showAlert(id,type,msg){
+    const el=document.getElementById(id);
+    el.className=`alert alert-${type}`;
+    el.textContent=msg;
+    el.classList.remove('hidden');
+}
+function esc(s){return String(s).replace(/'/g,"\\'");}
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){closeResultsModal();closeNfcModal();closeEditModal();}
+});
+</script>
+{% endblock %}

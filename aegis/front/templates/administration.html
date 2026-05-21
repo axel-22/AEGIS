@@ -1,0 +1,458 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--deep);border:1px solid var(--border);border-radius:20px;padding:36px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;}
+.modal h2{font-family:'Syne',sans-serif;font-weight:800;margin-bottom:20px;}
+.mode-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;}
+.mode-confidential{background:rgba(230,57,70,.15);color:var(--accent);}
+.mode-auditable{background:rgba(76,201,240,.15);color:var(--cyan);}
+.nfc-zone{text-align:center;padding:20px 0 12px;}
+.nfc-icon{font-size:48px;margin-bottom:10px;display:block;}
+.nfc-icon.scanning{animation:pulse 1.2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.12)}}
+</style>
+
+<div class="page-title" id="page-title">⚙️ Administration</div>
+<div class="page-subtitle" id="page-sub"></div>
+
+<div id="tabs-row" style="display:flex;gap:8px;margin-bottom:28px;flex-wrap:wrap;"></div>
+
+<div id="tab-votes">
+    <div style="display:flex;gap:8px;margin-bottom:20px;">
+        <button class="btn btn-secondary" id="sv-btn-list" onclick="switchVoteTab('list')">Liste</button>
+        <button class="btn btn-primary"   id="sv-btn-new"  onclick="switchVoteTab('new')">+ Nouveau vote</button>
+    </div>
+    <div id="svtab-list">
+        <div id="vlist-loading" class="alert alert-info"><span class="spinner"></span> Chargement…</div>
+        <div id="vlist-content"></div>
+    </div>
+    <div id="svtab-new" style="display:none">
+        <div class="card">
+            <h2>Créer un vote</h2>
+            <div id="new-vote-alert" class="alert alert-error hidden"></div>
+            <label>Question</label><input type="text" id="nv-q" placeholder="Question du vote">
+            <label>Description</label><textarea id="nv-d" rows="2" placeholder="Optionnel"></textarea>
+            <div class="form-row">
+                <div>
+                    <label>Format de réponse</label>
+                    <select id="nv-type">
+                        <option value="boolean">Oui / Non</option>
+                        <option value="multiple">Choix multiple</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Mode</label>
+                    <select id="nv-mode">
+                        <option value="confidentiel">Confidentiel</option>
+                        <option value="auditable">Auditable</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label>Règle de décision</label>
+                <select id="nv-vote-type">
+                    <option value="majorité">Majorité</option>
+                    <option value="unanimité">Unanimité</option>
+                    <option value="minimum_requis">Minimum requis</option>
+                </select>
+            </div>
+            <div id="nv-answers-row" style="display:none">
+                <label>Réponses (une par ligne)</label>
+                <textarea id="nv-answers" rows="3" placeholder="Réponse A&#10;Réponse B&#10;Réponse C"></textarea>
+            </div>
+            <label>Date d'expiration</label><input type="date" id="nv-date">
+            <label>Assigner à</label>
+            <select id="nv-assign">
+                <option value="all">Tous les utilisateurs</option>
+                <option value="select">Sélectionner des utilisateurs…</option>
+            </select>
+            <div id="nv-users-row" style="display:none">
+                <label>Participants</label>
+                <div id="nv-users-loading" class="alert alert-info" style="display:none"><span class="spinner"></span> Chargement…</div>
+                <div id="nv-users-list" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px;"></div>
+            </div>
+            <button class="btn btn-primary" onclick="createVote()">
+                <span id="nv-spinner" class="spinner hidden"></span> Créer le vote
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="tab-secrets" style="display:none">
+    <div style="display:flex;gap:8px;margin-bottom:20px;">
+        <button class="btn btn-secondary" id="ss-btn-mine"   onclick="switchSecTab('mine')">Mes fragments</button>
+        <button class="btn btn-primary"   id="ss-btn-create" onclick="switchSecTab('create')">+ Créer</button>
+        <button class="btn btn-secondary" id="ss-btn-manage" onclick="switchSecTab('manage')">Gérer</button>
+        <button class="btn btn-secondary" id="ss-btn-recon"  onclick="switchSecTab('recon')">Reconstruire</button>
+    </div>
+    <div id="sstab-mine"><div id="mine-loading" class="alert alert-info"><span class="spinner"></span></div><div id="mine-content"></div></div>
+    <div id="sstab-create" style="display:none">
+        <div class="card">
+            <h2>Créer un secret partagé</h2>
+            <div id="sc-alert" class="alert alert-error hidden"></div>
+            <label>Label</label><input type="text" id="sc-label" placeholder="ex: clé-backup-2025">
+            <label>Secret</label><input type="password" id="sc-secret" placeholder="Valeur secrète">
+            <label>Seuil k (parts minimum pour reconstruire)</label><input type="number" id="sc-k" min="2" value="2">
+            <label>Badge IDs des dépositaires (virgules)</label><input type="text" id="sc-badges" placeholder="1,3,5">
+            <button class="btn btn-primary" onclick="createSecret()">
+                <span id="sc-spinner" class="spinner hidden"></span> Créer et distribuer
+            </button>
+        </div>
+    </div>
+    <div id="sstab-manage" style="display:none">
+        <div id="sm-loading" class="alert alert-info"><span class="spinner"></span></div>
+        <div id="sm-content"></div>
+    </div>
+    <div id="sstab-recon" style="display:none">
+        <div class="card">
+            <h2>Reconstruire un secret</h2>
+            <div id="sr-alert" class="alert alert-error hidden"></div>
+            <label>Sélectionnez le secret</label>
+            <select id="sr-select" onchange="loadCustodians(this.value)"><option value="">— Choisir —</option></select>
+            <div id="sr-custodians" style="display:none;margin-top:16px;">
+                <p style="color:var(--muted);font-size:13px;margin-bottom:12px;">Dépositaires : collectez les authentifications une par une.</p>
+                <div id="sr-cust-list"></div>
+                <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
+                    <p style="font-size:13px;margin-bottom:10px;"><strong id="sr-collected">0</strong> / <strong id="sr-needed">?</strong> parts collectées</p>
+                    <button class="btn btn-secondary" onclick="addAuthenticator()" id="sr-add-btn">+ Ajouter un dépositaire</button>
+                    <button class="btn btn-primary" id="sr-recon-btn" onclick="reconstruct()" style="display:none;margin-left:8px;">
+                        <span id="sr-spinner" class="spinner hidden"></span> Reconstruire
+                    </button>
+                </div>
+                <div id="sr-result" class="alert alert-success hidden" style="margin-top:16px;word-break:break-all;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal résultats vote -->
+<div class="modal-overlay" id="results-modal">
+<div class="modal">
+    <h2 id="rm-title"></h2>
+    <div id="rm-content"></div>
+    <div style="text-align:right;margin-top:20px;"><button class="btn btn-secondary" onclick="closeResultsModal()">Fermer</button></div>
+</div>
+</div>
+
+<!-- Modal NFC pour reconstruction -->
+<div class="modal-overlay" id="nfc-modal">
+<div class="modal">
+    <h2>Authentification dépositaire</h2>
+    <div class="nfc-zone">
+        <span class="nfc-icon" id="nfc-m-icon">🪪</span>
+        <p style="font-weight:600;margin-bottom:6px;" id="nfc-m-text">Activez le lecteur NFC</p>
+        <button class="btn btn-primary" id="nfc-m-btn" onclick="startReconNfc()">Activer le lecteur NFC</button>
+    </div>
+    <div id="nfc-m-totp" style="display:none">
+        <label>Code TOTP du dépositaire</label>
+        <input type="text" id="nfc-m-code" maxlength="6" inputmode="numeric" placeholder="6 chiffres">
+        <div style="display:flex;justify-content:space-between;margin-top:12px;">
+            <button class="btn btn-secondary" onclick="closeNfcModal()">Annuler</button>
+            <button class="btn btn-primary" onclick="confirmAuthenticator()">Ajouter</button>
+        </div>
+    </div>
+    <div style="text-align:center;margin-top:8px;" id="nfc-m-cancel-row">
+        <button class="btn btn-secondary btn-sm" onclick="closeNfcModal()">Annuler</button>
+    </div>
+</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let _role='', _authenticators=[], _reconSecretId=null, _currentNfcId=null;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async()=>{
+    await new Promise(r=>setTimeout(r,100)); // attendre base.html init
+    _role = (window.AEGIS.user||{}).role||'';
+    buildTabs();
+})();
+
+function buildTabs(){
+    const TABS=[
+        {id:'votes',  label:'🗳️ Votes',    roles:['superadmin','admin','manager']},
+        {id:'secrets',label:'🔐 Secrets',   roles:['superadmin','admin','manager']},
+    ];
+    const row=document.getElementById('tabs-row');
+    let first=true;
+    TABS.forEach(t=>{
+        if(!t.roles.includes(_role)) return;
+        const btn=document.createElement('button');
+        btn.className=first?'btn btn-primary':'btn btn-secondary';
+        btn.id='tab-btn-'+t.id;
+        btn.textContent=t.label;
+        btn.onclick=()=>openTab(t.id);
+        row.appendChild(btn);
+        document.getElementById('tab-'+t.id).style.display=first?'':'none';
+        if(first){loadTab(t.id);first=false;}
+        else document.getElementById('tab-'+t.id).style.display='none';
+    });
+    if(first){/* no tabs for this role */document.getElementById('tabs-row').innerHTML='<div class="alert alert-info">Accès limité.</div>';}
+}
+
+function openTab(id){
+    ['votes','secrets'].forEach(x=>{
+        const el=document.getElementById('tab-'+x);
+        const btn=document.getElementById('tab-btn-'+x);
+        if(el){el.style.display=x===id?'':'none';}
+        if(btn){btn.className=x===id?'btn btn-primary':'btn btn-secondary';}
+    });
+    loadTab(id);
+}
+function loadTab(id){if(id==='votes')loadVotesList();else if(id==='secrets')loadSecretsMine();}
+
+// ── Votes ────────────────────────────────────────────────────────────────────
+function switchVoteTab(t){
+    document.getElementById('svtab-list').style.display=t==='list'?'':'none';
+    document.getElementById('svtab-new').style.display=t==='new'?'':'none';
+    document.getElementById('sv-btn-list').className=t==='list'?'btn btn-primary':'btn btn-secondary';
+    document.getElementById('sv-btn-new').className=t==='new'?'btn btn-primary':'btn btn-secondary';
+}
+
+document.getElementById('nv-type').onchange=function(){
+    document.getElementById('nv-answers-row').style.display=this.value==='multiple'?'':'none';
+};
+document.getElementById('nv-assign').onchange=async function(){
+    const show=this.value==='select';
+    document.getElementById('nv-users-row').style.display=show?'':'none';
+    if(show) await loadUsersChecklist();
+};
+
+async function loadUsersChecklist(){
+    const listEl=document.getElementById('nv-users-list');
+    const loadingEl=document.getElementById('nv-users-loading');
+    listEl.innerHTML='';
+    loadingEl.style.display='';
+    const {ok,data}=await api('GET','users');
+    loadingEl.style.display='none';
+    if(!ok){listEl.innerHTML='<span style="color:var(--accent);font-size:13px;">Erreur chargement.</span>';return;}
+    if(!data.length){listEl.innerHTML='<span style="color:var(--muted);font-size:13px;">Aucun utilisateur.</span>';return;}
+    listEl.innerHTML=data.map(u=>`
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;padding:4px 0;">
+            <input type="checkbox" name="nv-user-cb" value="${u.user_id}" style="width:16px;height:16px;cursor:pointer;">
+            <span><strong>${u.first_name} ${u.last_name}</strong> <span style="color:var(--muted);">@${u.username}</span></span>
+        </label>`).join('');
+}
+
+async function loadVotesList(){
+    const {ok,data}=await api('GET','votes');
+    document.getElementById('vlist-loading').classList.add('hidden');
+    if(!ok||!data.length){document.getElementById('vlist-content').innerHTML='<div class="alert alert-info">Aucun vote.</div>';return;}
+    const canClose=['superadmin','admin','manager'].includes(_role);
+    document.getElementById('vlist-content').innerHTML=`<div class="card"><table>
+        <thead><tr><th>#</th><th>Question</th><th>Mode</th><th>Statut</th><th>Actions</th></tr></thead>
+        <tbody>${data.map(v=>`<tr>
+            <td>${v.vote_id}</td>
+            <td>${v.question}</td>
+            <td><span class="mode-pill mode-${v.vote_mode}">${v.vote_mode}</span></td>
+            <td class="${v.vote_status==='open'?'badge-status-active':'badge-status-revoked'}">${v.vote_status==='open'?'Ouvert':'Fermé'}</td>
+            <td>
+                <button class="btn btn-secondary btn-sm" onclick="showResults(${v.vote_id},'${v.question.replace(/'/g,"\\'")}')">Résultats</button>
+                ${canClose&&v.vote_status==='open'?`<button class="btn btn-danger btn-sm" onclick="closeVote(${v.vote_id})">Clôturer</button>`:''}
+            </td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function createVote(){
+    const q=document.getElementById('nv-q').value.trim();
+    if(!q){document.getElementById('new-vote-alert').textContent='Question requise.';document.getElementById('new-vote-alert').classList.remove('hidden');return;}
+    document.getElementById('nv-spinner').classList.remove('hidden');
+    const format=document.getElementById('nv-type').value;
+    const answers=format==='multiple'?document.getElementById('nv-answers').value.split('\n').map(s=>s.trim()).filter(Boolean):['OUI','NON'];
+    const assignVal=document.getElementById('nv-assign').value;
+    const assignedIds=assignVal==='all'?'all':Array.from(document.querySelectorAll('input[name="nv-user-cb"]:checked')).map(cb=>parseInt(cb.value));
+    const body={
+        question:q,description_text:document.getElementById('nv-d').value,
+        vote_type:document.getElementById('nv-vote-type').value,
+        vote_mode:document.getElementById('nv-mode').value,
+        is_boolean:format==='boolean',
+        expiration_date:document.getElementById('nv-date').value||undefined,
+        answers,
+        assigned_user_ids:assignedIds,
+    };
+    const {ok,data}=await api('POST','votes',body);
+    document.getElementById('nv-spinner').classList.add('hidden');
+    if(ok){document.getElementById('new-vote-alert').className='alert alert-success';document.getElementById('new-vote-alert').textContent='✅ Vote créé (#'+data.vote_id+')';document.getElementById('new-vote-alert').classList.remove('hidden');loadVotesList();}
+    else{document.getElementById('new-vote-alert').className='alert alert-error';document.getElementById('new-vote-alert').textContent=data.error||'Erreur.';document.getElementById('new-vote-alert').classList.remove('hidden');}
+}
+
+async function closeVote(id){
+    if(!confirm('Clôturer ce vote ?')) return;
+    const {ok,data}=await api('POST',`votes/${id}/close`);
+    if(ok) loadVotesList();
+    else alert(data.error||'Erreur.');
+}
+
+async function showResults(id,q){
+    document.getElementById('rm-title').textContent=q;
+    document.getElementById('rm-content').innerHTML='<span class="spinner"></span>';
+    document.getElementById('results-modal').classList.add('open');
+    const {ok,data}=await api('GET',`votes/${id}/results`);
+    if(!ok){document.getElementById('rm-content').innerHTML='<div class="alert alert-error">'+(data.error||'Erreur')+'</div>';return;}
+    const total=data.total||1;
+    document.getElementById('rm-content').innerHTML=`<p style="color:var(--muted);margin-bottom:16px;">${total} vote(s)</p>`+
+    Object.values(data.counts||{}).map(c=>`
+        <div style="margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:14px;">
+                <span style="font-weight:600;">${c.text}</span>
+                <span style="color:var(--muted)">${c.count} (${Math.round(c.count/total*100)}%)</span>
+            </div>
+            <div style="height:8px;background:rgba(255,255,255,0.08);border-radius:4px;">
+                <div style="height:100%;width:${Math.round(c.count/total*100)}%;background:var(--cyan);border-radius:4px;"></div>
+            </div>
+        </div>`).join('');
+}
+function closeResultsModal(){document.getElementById('results-modal').classList.remove('open');}
+
+// ── Secrets ───────────────────────────────────────────────────────────────────
+function switchSecTab(t){
+    ['mine','create','manage','recon'].forEach(x=>{
+        document.getElementById('sstab-'+x).style.display=x===t?'':'none';
+        document.getElementById('ss-btn-'+x).className=x===t?'btn btn-primary':'btn btn-secondary';
+    });
+    if(t==='manage') loadSecretsManage();
+    if(t==='recon')  loadSecretsForRecon();
+}
+
+async function loadSecretsMine(){
+    const {ok,data}=await api('GET','secrets/mine');
+    document.getElementById('mine-loading').classList.add('hidden');
+    if(!ok){document.getElementById('mine-content').innerHTML='<div class="alert alert-error">'+(data.error||'')+'</div>';return;}
+    if(!data.length){document.getElementById('mine-content').innerHTML='<div class="alert alert-info">Aucun fragment.</div>';return;}
+    document.getElementById('mine-content').innerHTML=`<div class="card"><table>
+        <thead><tr><th>Label</th><th>Seuil</th><th>Utilisé</th></tr></thead>
+        <tbody>${data.map(s=>`<tr><td><strong>${s.label}</strong></td><td>${s.k}/${s.n}</td>
+            <td>${s.secret_used?'<span class="badge-status-revoked">Oui</span>':'<span class="badge-status-active">Non</span>'}</td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function createSecret(){
+    const label=document.getElementById('sc-label').value.trim();
+    const secret=document.getElementById('sc-secret').value;
+    const k=parseInt(document.getElementById('sc-k').value);
+    const badge_ids=document.getElementById('sc-badges').value.split(',').map(s=>parseInt(s.trim())).filter(Boolean);
+    if(!label||!secret||!badge_ids.length){document.getElementById('sc-alert').textContent='Tous les champs sont requis.';document.getElementById('sc-alert').classList.remove('hidden');return;}
+    document.getElementById('sc-spinner').classList.remove('hidden');
+    const {ok,data}=await api('POST','secrets',{label,secret,k,badge_ids});
+    document.getElementById('sc-spinner').classList.add('hidden');
+    if(ok){document.getElementById('sc-alert').className='alert alert-success';document.getElementById('sc-alert').textContent='✅ Secret créé et distribué (#'+data.secret_id+')';document.getElementById('sc-alert').classList.remove('hidden');}
+    else{document.getElementById('sc-alert').className='alert alert-error';document.getElementById('sc-alert').textContent=data.error||'Erreur.';document.getElementById('sc-alert').classList.remove('hidden');}
+}
+
+async function loadSecretsManage(){
+    document.getElementById('sm-loading').classList.remove('hidden');
+    document.getElementById('sm-content').innerHTML='';
+    const {ok,data}=await api('GET','secrets');
+    document.getElementById('sm-loading').classList.add('hidden');
+    if(!ok||!data.length){document.getElementById('sm-content').innerHTML='<div class="alert alert-info">Aucun secret.</div>';return;}
+    document.getElementById('sm-content').innerHTML=`<div class="card"><table>
+        <thead><tr><th>Label</th><th>Seuil</th><th>Utilisé</th><th></th></tr></thead>
+        <tbody>${data.map(s=>`<tr>
+            <td><strong>${s.label}</strong></td><td>${s.k}/${s.n}</td>
+            <td>${s.used?'<span class="badge-status-revoked">Oui</span>':'<span class="badge-status-active">Non</span>'}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="deleteSecret('${s.label}')">Supprimer</button></td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function deleteSecret(label){
+    if(!confirm(`Supprimer le secret "${label}" et toutes ses parts ?`)) return;
+    const {ok,data}=await api('DELETE',`secrets/${encodeURIComponent(label)}`);
+    if(ok) loadSecretsManage();
+    else alert(data.error||'Erreur.');
+}
+
+// ── Reconstruction ────────────────────────────────────────────────────────────
+async function loadSecretsForRecon(){
+    const {ok,data}=await api('GET','secrets');
+    const sel=document.getElementById('sr-select');
+    sel.innerHTML='<option value="">— Choisir —</option>';
+    if(ok) data.forEach(s=>{const o=document.createElement('option');o.value=s.secret_id;o.textContent=`${s.label} (${s.k}/${s.n})`;sel.appendChild(o);});
+}
+
+async function loadCustodians(id){
+    _reconSecretId=id?parseInt(id):null;
+    _authenticators=[];
+    document.getElementById('sr-custodians').style.display=id?'':'none';
+    if(!id) return;
+    const {ok,data}=await api('GET',`secrets/${id}/custodians`);
+    if(!ok) return;
+    const neededEl=document.getElementById('sr-needed');
+    // get k from select text
+    const selOpt=document.getElementById('sr-select').options[document.getElementById('sr-select').selectedIndex];
+    const match=(selOpt.textContent.match(/(\d+)\/(\d+)/)||[]);
+    neededEl.textContent=match[1]||'?';
+    document.getElementById('sr-collected').textContent='0';
+    document.getElementById('sr-recon-btn').style.display='none';
+    document.getElementById('sr-result').classList.add('hidden');
+    document.getElementById('sr-cust-list').innerHTML=data.map(c=>`
+        <div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;">
+            🪪 <strong>${c.first_name} ${c.last_name}</strong> (@${c.username}) — badge #${c.badge_id}
+        </div>`).join('');
+}
+
+let _nfcModalResolve=null;
+function addAuthenticator(){
+    _currentNfcId=null;
+    document.getElementById('nfc-m-icon').className='nfc-icon';
+    document.getElementById('nfc-m-icon').textContent='🪪';
+    document.getElementById('nfc-m-text').textContent='Activez le lecteur NFC';
+    document.getElementById('nfc-m-btn').style.display='';
+    document.getElementById('nfc-m-totp').style.display='none';
+    document.getElementById('nfc-m-cancel-row').style.display='';
+    document.getElementById('nfc-modal').classList.add('open');
+}
+
+async function startReconNfc(){
+    document.getElementById('nfc-m-btn').style.display='none';
+    document.getElementById('nfc-m-icon').className='nfc-icon scanning';
+    document.getElementById('nfc-m-text').textContent='En attente du badge…';
+    document.getElementById('nfc-m-cancel-row').style.display='none';
+    try{
+        const r=await fetch('/api/auth/scan-badge',{method:'POST',signal:AbortSignal.timeout(35000)});
+        const d=await r.json();
+        if(!r.ok){document.getElementById('nfc-m-icon').textContent='❌';document.getElementById('nfc-m-text').textContent=d.error||'Erreur';document.getElementById('nfc-m-btn').style.display='';document.getElementById('nfc-m-cancel-row').style.display='';return;}
+        _currentNfcId=d.header_id;
+        document.getElementById('nfc-m-icon').className='nfc-icon';
+        document.getElementById('nfc-m-icon').textContent='✅';
+        document.getElementById('nfc-m-text').textContent='Badge détecté — entrez le TOTP';
+        document.getElementById('nfc-m-totp').style.display='';
+        document.getElementById('nfc-m-cancel-row').style.display='none';
+        document.getElementById('nfc-m-code').value='';
+        document.getElementById('nfc-m-code').focus();
+    }catch(e){
+        document.getElementById('nfc-m-icon').textContent='⏱';document.getElementById('nfc-m-text').textContent='Délai dépassé';
+        document.getElementById('nfc-m-btn').style.display='';document.getElementById('nfc-m-btn').textContent='Réessayer';
+        document.getElementById('nfc-m-cancel-row').style.display='';
+    }
+}
+
+function confirmAuthenticator(){
+    const code=document.getElementById('nfc-m-code').value.trim();
+    if(!code||!_currentNfcId) return;
+    _authenticators.push({header_id:_currentNfcId,totp_code:code});
+    document.getElementById('sr-collected').textContent=_authenticators.length;
+    const needed=parseInt(document.getElementById('sr-needed').textContent)||0;
+    if(_authenticators.length>=needed) document.getElementById('sr-recon-btn').style.display='';
+    closeNfcModal();
+}
+function closeNfcModal(){document.getElementById('nfc-modal').classList.remove('open');}
+
+async function reconstruct(){
+    document.getElementById('sr-spinner').classList.remove('hidden');
+    document.getElementById('sr-alert').classList.add('hidden');
+    const {ok,data}=await api('POST',`secrets/${_reconSecretId}/reconstruct`,{authenticators:_authenticators});
+    document.getElementById('sr-spinner').classList.add('hidden');
+    if(ok){
+        document.getElementById('sr-result').textContent='🔓 Secret : '+data.secret;
+        document.getElementById('sr-result').classList.remove('hidden');
+    } else {
+        document.getElementById('sr-alert').textContent=data.error||'Erreur.';
+        document.getElementById('sr-alert').classList.remove('hidden');
+    }
+}
+
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeResultsModal();closeNfcModal();}});
+</script>
+{% endblock %}

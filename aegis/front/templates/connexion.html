@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+.login-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 80vh;
+}
+.login-box {
+    width: 100%;
+    max-width: 480px;
+}
+.panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px;
+    margin-bottom: 16px;
+}
+.panel-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+.panel-sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+
+/* Étapes */
+.steps { display: flex; gap: 8px; margin-bottom: 28px; }
+.step-dot {
+    flex: 1; height: 4px; border-radius: 2px;
+    background: var(--border); transition: background 0.3s;
+}
+.step-dot.done  { background: var(--success, #4ade80); }
+.step-dot.active{ background: white; }
+
+/* Carte utilisateur */
+.user-card {
+    display: flex; align-items: center; gap: 14px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 22px;
+}
+.user-avatar {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+}
+.user-card-name  { font-weight: 700; font-size: 15px; }
+.user-card-role  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* Dev banner */
+.dev-banner {
+    background: rgba(244,162,97,0.1);
+    border: 1px solid rgba(244,162,97,0.3);
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-size: 12px;
+    color: var(--gold);
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+}
+.tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+.tab {
+    flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
+    background: none; color: var(--muted); cursor: pointer; font-size: 13px;
+    font-family: 'DM Sans', sans-serif; font-weight: 600; transition: all 0.15s;
+}
+.tab.active { background: rgba(255,255,255,0.08); color: white; border-color: rgba(255,255,255,0.2); }
+
+/* Boutons nav */
+.btn-back {
+    background: none; border: 1px solid var(--border); border-radius: 10px;
+    color: var(--muted); padding: 10px 16px; cursor: pointer;
+    font-family: 'DM Sans', sans-serif; font-size: 13px;
+    transition: all 0.15s; margin-right: 8px;
+}
+.btn-back:hover { border-color: rgba(255,255,255,0.2); color: white; }
+
+.user-btn {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 14px 18px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+    border-radius: 12px; color: var(--text); cursor: pointer; margin-bottom: 10px;
+    transition: all 0.15s; text-align: left;
+}
+.user-btn:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.2); }
+.user-btn .name { font-weight: 600; font-size: 15px; }
+.user-btn .sub  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.5; transform: scale(1.12); }
+}
+</style>
+
+<div class="login-wrap">
+<div class="login-box">
+
+    {% if dev_mode %}
+    <div class="dev-banner">⚠️ Mode développement actif</div>
+    {% endif %}
+
+    <div class="panel">
+        <div class="panel-title">🛡️ Connexion AEGIS</div>
+        <div class="panel-sub" id="panel-sub">Identifiez-vous pour accéder au système.</div>
+
+        {% if dev_mode %}
+        <div class="tabs">
+            <button class="tab active" id="tab-btn-dev"  onclick="switchTab('dev')">⚡ Accès rapide</button>
+            <button class="tab"        id="tab-btn-real" onclick="switchTab('real')">🔐 Auth NFC+TOTP</button>
+        </div>
+        {% endif %}
+
+        <div id="alert-box" class="alert alert-error hidden"></div>
+
+        <!-- ── DEV TAB ─────────────────────────────────────────────────── -->
+        <div id="tab-dev" {% if not dev_mode %}style="display:none"{% endif %}>
+            <div id="dev-loading" class="alert alert-info">
+                <span class="spinner"></span> Chargement des utilisateurs…
+            </div>
+            <div id="dev-users-list"></div>
+        </div>
+
+        <!-- ── REAL AUTH : 3 étapes ────────────────────────────────────── -->
+        <div id="tab-real" {% if dev_mode %}style="display:none"{% endif %}>
+
+            <!-- Indicateur d'étapes -->
+            <div class="steps">
+                <div class="step-dot active" id="dot-1"></div>
+                <div class="step-dot"        id="dot-2"></div>
+                <div class="step-dot"        id="dot-3"></div>
+            </div>
+
+            <!-- Étape 1 — Username -->
+            <div id="step-1">
+                <label>Nom d'utilisateur</label>
+                <input type="text" id="inp-username" placeholder="ex : jean.perrot" autocomplete="username">
+                <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+                    <button class="btn btn-primary" onclick="stepUsername()" style="padding:12px 28px;">
+                        <span id="sp1" class="spinner hidden"></span> Continuer →
+                    </button>
+                </div>
+            </div>
+
+            <!-- Étape 2 — Badge NFC -->
+            <div id="step-2" style="display:none">
+                <div class="user-card" id="login-card"></div>
+
+                <div id="nfc-idle" style="text-align:center; padding: 24px 0 16px;">
+                    <div style="font-size:48px; margin-bottom:12px;">🪪</div>
+                    <p style="color:var(--muted); font-size:14px; margin-bottom:20px;">
+                        Cliquez sur le bouton puis approchez votre badge du lecteur.
+                    </p>
+                    <button class="btn btn-primary" id="btn-scan" onclick="startScan()" style="padding:12px 28px;">
+                        Activer le lecteur NFC
+                    </button>
+                </div>
+
+                <div id="nfc-scanning" style="display:none; text-align:center; padding: 24px 0 16px;">
+                    <div style="font-size:48px; margin-bottom:12px; animation: pulse 1.2s infinite;">🪪</div>
+                    <p style="font-weight:600; margin-bottom:6px;">En attente du badge…</p>
+                    <p style="color:var(--muted); font-size:13px; margin-bottom:20px;">Approchez votre badge du lecteur NFC.</p>
+                    <button class="btn-back" onclick="cancelScan()">Annuler</button>
+                </div>
+
+                <div id="nfc-ok" style="display:none; text-align:center; padding: 16px 0;">
+                    <div style="font-size:42px; margin-bottom:8px;">✅</div>
+                    <p style="font-weight:600;">Badge détecté !</p>
+                </div>
+
+                <div style="margin-top:8px;">
+                    <button class="btn-back" onclick="goBack(1)" id="btn-back-2">← Retour</button>
+                </div>
+            </div>
+
+            <!-- Étape 3 — TOTP -->
+            <div id="step-3" style="display:none">
+                <div class="user-card" id="user-card-2"></div>
+                <label>Code TOTP</label>
+                <input type="text" id="inp-totp" placeholder="6 chiffres" maxlength="6"
+                       inputmode="numeric" autocomplete="one-time-code">
+                <p style="font-size:12px;color:var(--muted);margin-top:-10px;margin-bottom:16px;">
+                    Code généré par Google Authenticator.
+                </p>
+                <div style="display:flex; justify-content:space-between; margin-top:12px;">
+                    <button class="btn-back" onclick="goBack(2)">← Retour</button>
+                    <button class="btn btn-primary" onclick="doLogin()" style="padding:12px 28px;">
+                        <span id="sp3" class="spinner hidden"></span> Se connecter
+                    </button>
+                </div>
+            </div>
+
+        </div><!-- /tab-real -->
+    </div><!-- /panel -->
+</div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const DEV_MODE = {{ 'true' if dev_mode else 'false' }};
+
+const ROLE_ICONS = {
+    superadmin:'👑', super_admin:'👑', admin:'🔧',
+    manager:'📋', member:'👤', auditor:'🔍'
+};
+const ROLE_LABELS = {
+    superadmin:'Super Admin', admin:'Admin', manager:'Manager',
+    member:'Membre', auditor:'Auditeur'
+};
+
+// état courant
+let _username = '', _headerid = '', _userInfo = null;
+
+// ── Tabs dev/real ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+    const isDev = tab === 'dev';
+    document.getElementById('tab-dev').style.display  = isDev ? '' : 'none';
+    document.getElementById('tab-real').style.display = isDev ? 'none' : '';
+    document.getElementById('tab-btn-dev').classList.toggle('active', isDev);
+    document.getElementById('tab-btn-real').classList.toggle('active', !isDev);
+}
+
+// ── Gestion des étapes ────────────────────────────────────────────────────────
+function setStep(n) {
+    [1,2,3].forEach(i => {
+        document.getElementById('step-'+i).style.display = i === n ? '' : 'none';
+        const dot = document.getElementById('dot-'+i);
+        dot.className = 'step-dot ' + (i < n ? 'done' : i === n ? 'active' : '');
+    });
+    const subs = ['Identifiez-vous pour accéder au système.',
+                  'Passez votre badge NFC devant le lecteur.',
+                  'Saisissez le code affiché dans Google Authenticator.'];
+    document.getElementById('panel-sub').textContent = subs[n-1];
+    clearAlert();
+}
+
+function goBack(toStep) { setStep(toStep); }
+
+function showAlert(msg) {
+    const el = document.getElementById('alert-box');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+}
+function clearAlert() {
+    document.getElementById('alert-box').classList.add('hidden');
+}
+
+function userCardHTML(info) {
+    return `<div class="user-avatar">${ROLE_ICONS[info.role] || '👤'}</div>
+            <div>
+                <div class="user-card-name">${info.first_name} ${info.last_name}</div>
+                <div class="user-card-role">${ROLE_LABELS[info.role] || info.role}</div>
+            </div>`;
+}
+
+// ── Étape 1 : vérification username ──────────────────────────────────────────
+async function stepUsername() {
+    _username = document.getElementById('inp-username').value.trim().toLowerCase();
+    if (!_username) { showAlert('Veuillez saisir un nom d\'utilisateur.'); return; }
+
+    const sp = document.getElementById('sp1');
+    sp.classList.remove('hidden');
+
+    const r = await fetch(`/api/auth/lookup?username=${encodeURIComponent(_username)}`);
+    const data = await r.json();
+    sp.classList.add('hidden');
+
+    if (!r.ok) { showAlert(data.error || 'Utilisateur inconnu.'); return; }
+
+    _userInfo = data;
+    document.getElementById('login-card').innerHTML  = userCardHTML(data);
+    document.getElementById('user-card-2').innerHTML = userCardHTML(data);
+    setStep(2);
+}
+
+// ── Étape 2 : scan NFC ───────────────────────────────────────────────────────
+let _scanAborted = false;
+
+async function startScan() {
+    _scanAborted = false;
+    document.getElementById('nfc-idle').style.display     = 'none';
+    document.getElementById('nfc-scanning').style.display = '';
+    document.getElementById('nfc-ok').style.display       = 'none';
+    document.getElementById('btn-back-2').style.display   = 'none';
+    clearAlert();
+
+    let resp, data;
+    try {
+        const r = await fetch('/api/auth/scan-badge', {
+            method: 'POST',
+            signal: AbortSignal.timeout(35000),
+        });
+        data = await r.json();
+        resp = r;
+    } catch (e) {
+        if (_scanAborted) return;
+        document.getElementById('nfc-scanning').style.display = 'none';
+        document.getElementById('nfc-idle').style.display     = '';
+        document.getElementById('btn-back-2').style.display   = '';
+        showAlert('Délai dépassé ou lecteur inaccessible.');
+        return;
+    }
+
+    if (_scanAborted) return;
+
+    document.getElementById('nfc-scanning').style.display = 'none';
+    document.getElementById('btn-back-2').style.display   = '';
+
+    if (!resp.ok) {
+        document.getElementById('nfc-idle').style.display = '';
+        showAlert(data.error || 'Erreur lecture NFC.');
+        return;
+    }
+
+    _headerid = data.header_id;
+    document.getElementById('nfc-ok').style.display = '';
+    setTimeout(() => { setStep(3); document.getElementById('inp-totp').focus(); }, 800);
+}
+
+function cancelScan() {
+    _scanAborted = true;
+    document.getElementById('nfc-scanning').style.display = 'none';
+    document.getElementById('nfc-idle').style.display     = '';
+    document.getElementById('btn-back-2').style.display   = '';
+}
+
+// ── Étape 3 : login final ─────────────────────────────────────────────────────
+async function doLogin() {
+    const totp_code = document.getElementById('inp-totp').value.trim();
+    if (!totp_code) { showAlert('Veuillez saisir le code TOTP.'); return; }
+
+    const sp = document.getElementById('sp3');
+    sp.classList.remove('hidden');
+
+    const { ok, data } = await api('POST', 'login', {
+        username: _username, header_id: _headerid, totp_code
+    });
+    sp.classList.add('hidden');
+
+    if (ok) {
+        window.AEGIS.user = data.user;
+        showUserCard(data.user);
+        redirectByRole(data.user.role);
+    } else {
+        showAlert(data.error || 'Authentification échouée.');
+        document.getElementById('inp-totp').value = '';
+        document.getElementById('inp-totp').focus();
+    }
+}
+
+// ── Entrée clavier ────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    const s1 = document.getElementById('step-1');
+    const s3 = document.getElementById('step-3');
+    if (s1 && s1.style.display !== 'none') stepUsername();
+    else if (s3 && s3.style.display !== 'none') doLogin();
+});
+
+// ── Dev mode ──────────────────────────────────────────────────────────────────
+async function loadDevUsers() {
+    if (!DEV_MODE) return;
+    const { ok, data } = await api('GET', 'dev/users');
+    document.getElementById('dev-loading').classList.add('hidden');
+    if (!ok) { showAlert(data.error || 'Impossible de charger les utilisateurs.'); return; }
+    document.getElementById('dev-users-list').innerHTML = data.map(u => `
+        <button class="user-btn" onclick="devLogin('${u.username}')">
+            <div>
+                <div class="name">${u.first_name} ${u.last_name}</div>
+                <div class="sub">@${u.username} · ${u.job || ''}</div>
+            </div>
+            <span class="role-pill role-${u.role}">${ROLE_ICONS[u.role]||''} ${u.role}</span>
+        </button>`).join('');
+}
+
+async function devLogin(username) {
+    const { ok, data } = await api('POST', 'dev/login', { username });
+    if (ok) { window.AEGIS.user = data.user; showUserCard(data.user); redirectByRole(data.user.role); }
+    else showAlert(data.error || 'Erreur.');
+}
+
+loadDevUsers();
+</script>
+{% endblock %}

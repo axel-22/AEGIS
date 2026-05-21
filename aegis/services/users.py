@@ -68,8 +68,8 @@ def create_user(user_data: dict) -> 'USERS':
     if verify_username := is_valid_username(username) == False:
         raise ValueError("Nom d'utilisateur invalide. Utilisez uniquement des lettres, chiffres, underscores et points.")   
     
-    if user_data.get("the_role") not in ["superadmin", "admin", "member", "manager", "auditor"]:
-        raise ValueError("Rôle utilisateur invalide. Choisissez parmi : superadmin, admin, member.")
+    if user_data.get("the_role") not in ["superadmin", "admin", "manager", "member", "auditor"]:
+        raise ValueError("Rôle utilisateur invalide. Choisissez parmi : superadmin, admin, manager, member, auditor.")
         
     new_user = USERS(
             first_name=user_data["first_name"],
