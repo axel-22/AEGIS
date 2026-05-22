@@ -486,5 +486,191 @@ function redirectByRole(role) {
 </script>
 
 {% block scripts %}{% endblock %}
+
+<!-- ══════════════ CLAVIER VIRTUEL ══════════════ -->
+<div id="vkb" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:10000;
+    background:var(--deep);border-top:2px solid var(--border);
+    padding:10px 10px 18px;user-select:none;
+    box-shadow:0 -8px 40px rgba(0,0,0,.5);
+    transition:transform .18s ease;">
+  <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+    <button id="vkb-close" type="button" style="background:none;border:none;color:var(--muted);
+        font-size:20px;cursor:pointer;padding:0 4px;line-height:1;">✕</button>
+  </div>
+  <div id="vkb-rows" style="display:flex;flex-direction:column;gap:5px;max-width:720px;margin:0 auto;"></div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  let _tgt = null, _shifted = false, _caps = false;
+
+  const ALPHA = [
+    ['1','2','3','4','5','6','7','8','9','0'],
+    ['a','z','e','r','t','y','u','i','o','p'],
+    ['q','s','d','f','g','h','j','k','l','m'],
+    ['w','x','c','v','b','n'],
+  ];
+  const SHIFT_ROW0 = ['&','é','"',"'",'(','-','è','_','ç','à'];
+
+  /* ── Key button factory ── */
+  function makeBtn(label, action, extraStyle){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.style.cssText =
+      'flex:1;min-width:28px;padding:11px 4px;border-radius:8px;border:1px solid rgba(255,255,255,.1);' +
+      'background:rgba(255,255,255,.07);color:var(--text);font-family:"DM Sans",sans-serif;' +
+      'font-size:15px;cursor:pointer;transition:background .1s;' + (extraStyle||'');
+    b.addEventListener('pointerdown', e => { e.preventDefault(); action(); });
+    b.addEventListener('pointerenter', () => { b.style.background='rgba(255,255,255,.16)'; });
+    b.addEventListener('pointerleave', () => { b.style.background=''; });
+    return b;
+  }
+
+  /* ── Insert / delete ── */
+  function ins(ch){
+    if(!_tgt) return;
+    const s=_tgt.selectionStart, e=_tgt.selectionEnd, v=_tgt.value;
+    _tgt.value = v.slice(0,s)+ch+v.slice(e);
+    _tgt.selectionStart = _tgt.selectionEnd = s+ch.length;
+    _tgt.dispatchEvent(new Event('input',{bubbles:true}));
+    if(_shifted && !_caps){ _shifted=false; render(); }
+  }
+  function bksp(){
+    if(!_tgt) return;
+    const s=_tgt.selectionStart, e=_tgt.selectionEnd;
+    if(s!==e){ ins(''); return; }
+    if(s>0){
+      _tgt.value = _tgt.value.slice(0,s-1)+_tgt.value.slice(s);
+      _tgt.selectionStart = _tgt.selectionEnd = s-1;
+      _tgt.dispatchEvent(new Event('input',{bubbles:true}));
+    }
+  }
+  function enter(){
+    if(_tgt) _tgt.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+    hide();
+  }
+
+  /* ── Render ── */
+  function render(){
+    const c = document.getElementById('vkb-rows');
+    c.innerHTML = '';
+    const isNum = _tgt && (_tgt.inputMode==='numeric' || _tgt.type==='number');
+
+    if(isNum){
+      [['7','8','9'],['4','5','6'],['1','2','3'],['','0','⌫']].forEach(row=>{
+        const r=document.createElement('div');
+        r.style='display:flex;gap:6px;';
+        row.forEach(k=>{
+          if(k===''){
+            const sp=document.createElement('div'); sp.style='flex:1'; r.appendChild(sp);
+          } else if(k==='⌫'){
+            r.appendChild(makeBtn('⌫',bksp,'background:rgba(230,57,70,.18);color:#ff8090;flex:1;'));
+          } else {
+            r.appendChild(makeBtn(k,()=>ins(k),'font-size:20px;'));
+          }
+        });
+        c.appendChild(r);
+      });
+      return;
+    }
+
+    /* Alpha rows */
+    const useShift = _shifted || _caps;
+    ALPHA.forEach((row, ri)=>{
+      const r=document.createElement('div'); r.style='display:flex;gap:4px;';
+      row.forEach((k,ki)=>{
+        const ch = useShift ? (ri===0 ? SHIFT_ROW0[ki] : k.toUpperCase()) : k;
+        r.appendChild(makeBtn(ch, ()=>ins(ch)));
+      });
+      c.appendChild(r);
+    });
+
+    /* Bottom row */
+    const bot=document.createElement('div'); bot.style='display:flex;gap:4px;margin-top:2px;';
+
+    /* Shift */
+    const shLabel = _caps ? '⇪' : (_shifted ? '⇧' : '⇧');
+    const shStyle = (_shifted||_caps)
+      ? 'flex:0 0 58px;background:rgba(76,201,240,.25);color:var(--cyan);font-size:16px;'
+      : 'flex:0 0 58px;font-size:16px;';
+    bot.appendChild(makeBtn(shLabel, ()=>{
+      if(_caps){_caps=false;_shifted=false;}
+      else if(_shifted){_caps=true;}
+      else{_shifted=true;}
+      render();
+    }, shStyle));
+
+    /* Space */
+    bot.appendChild(makeBtn('espace', ()=>ins(' '), 'flex:3;color:var(--muted);font-size:12px;'));
+
+    /* Special chars */
+    ['@','.','-','_'].forEach(k=>{
+      bot.appendChild(makeBtn(k, ()=>ins(k), 'flex:0 0 36px;color:var(--cyan);'));
+    });
+
+    /* Backspace */
+    bot.appendChild(makeBtn('⌫', bksp, 'flex:0 0 52px;background:rgba(230,57,70,.15);color:#ff8090;'));
+
+    /* Enter */
+    bot.appendChild(makeBtn('↵', enter, 'flex:0 0 52px;background:rgba(76,201,240,.18);color:var(--cyan);font-size:18px;'));
+
+    c.appendChild(bot);
+  }
+
+  /* ── Show / hide ── */
+  function show(el){
+    _tgt = el; _shifted = false;
+    render();
+    const kb = document.getElementById('vkb');
+    kb.style.display = '';
+    /* push main content up so input stays visible */
+    document.querySelector('.main-content') && (
+      document.querySelector('.main-content').style.paddingBottom = '320px'
+    );
+    setTimeout(()=>el.scrollIntoView({behavior:'smooth',block:'center'}), 150);
+  }
+  function hide(){
+    document.getElementById('vkb').style.display = 'none';
+    const mc = document.querySelector('.main-content');
+    if(mc) mc.style.paddingBottom = '';
+    _tgt = null;
+  }
+
+  /* ── Attach to inputs ── */
+  function attach(el){
+    if(el._vkb) return;
+    el._vkb = true;
+    el.addEventListener('focus', ()=>show(el));
+  }
+  function scan(){
+    document.querySelectorAll(
+      'input:not([type=date]):not([type=color]):not([type=file])' +
+      ':not([type=range]):not([type=checkbox]):not([type=radio]):not([type=submit]),' +
+      'textarea'
+    ).forEach(attach);
+  }
+
+  /* ── Close on outside click ── */
+  document.addEventListener('pointerdown', e=>{
+    const kb = document.getElementById('vkb');
+    if(!kb.contains(e.target) &&
+       !e.target.matches('input,textarea') &&
+       kb.style.display !== 'none'){
+      hide();
+    }
+  });
+
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') hide(); });
+  document.getElementById('vkb-close').addEventListener('pointerdown', e=>{
+    e.preventDefault(); hide();
+  });
+
+  /* Scan on load + observe dynamic content (modals etc.) */
+  document.addEventListener('DOMContentLoaded', scan);
+  new MutationObserver(scan).observe(document.body, {childList:true, subtree:true});
+})();
+</script>
 </body>
 </html>
