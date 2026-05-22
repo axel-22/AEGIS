@@ -381,6 +381,18 @@ def count_results(vote_id: int) -> dict:
         else:
             verdict = "TYPE DE VOTE INCONNU"
 
+        voters = []
+        if vote.vote_mode == "auditable":
+            for env in envelopes:
+                user = session.get(USERS, env.the_user) if env.the_user else None
+                answer_text = counts.get(env.vote_choice, {}).get("text", "?")
+                voters.append({
+                    "username":   user.username   if user else "anonyme",
+                    "first_name": user.first_name if user else "",
+                    "last_name":  user.last_name  if user else "",
+                    "vote":       answer_text,
+                })
+
         return {
             "vote_id":        vote.vote_id,
             "question":       vote.question,
@@ -392,6 +404,7 @@ def count_results(vote_id: int) -> dict:
             "total_votes":    total_votes,
             "counts":         counts,
             "verdict":        verdict,
+            "voters":         voters,
         }
     finally:
         session.close()

@@ -469,7 +469,7 @@ async function startBadgeScan(){
         const {ok:bOk,data:bData}=await api('POST','badges',{user_id:parseInt(userId),header_id:d.header_id});
         if(!bOk){showAlert('badge-alert','error',bData.error||'Erreur création badge.');return;}
         if(bData.qr_b64){
-            document.getElementById('badge-qr-img').src='data:image/png;base64,'+bData.qr_b64;
+            document.getElementById('badge-qr-img').src='data:image/svg+xml;base64,'+bData.qr_b64;
             document.getElementById('badge-qr-uri').textContent=bData.totp_uri||'';
             document.getElementById('badge-qr-card').classList.remove('hidden');
         }

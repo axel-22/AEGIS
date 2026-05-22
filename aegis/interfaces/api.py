@@ -240,10 +240,11 @@ def api_create_badge():
     """
     Crée un badge NFC+TOTP et l'attache à un utilisateur.
     Body : { "user_id": int, "header_id": str }
-    Retourne badge_id + totp_uri + qr_b64 (PNG base64).
+    Retourne badge_id + totp_uri + qr_svg (SVG base64).
     """
     import io, base64 as _b64, pyotp
     import qrcode as _qr
+    import qrcode.image.svg as _svg
     data    = request.get_json(silent=True) or {}
     user_id = data.get("user_id")
     header_id = (data.get("header_id") or "").strip()
@@ -262,12 +263,12 @@ def api_create_badge():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    qr = _qr.QRCode(border=1)
+    qr = _qr.QRCode(border=1, image_factory=_svg.SvgPathImage)
     qr.add_data(uri)
     qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
+    img = qr.make_image()
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf)
     qr_b64 = _b64.b64encode(buf.getvalue()).decode()
     return jsonify({"message": "Badge créé.", "badge_id": badge.badge_id,
                     "totp_uri": uri, "qr_b64": qr_b64}), 201
