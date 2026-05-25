@@ -1,0 +1,6 @@
+# Format : paquet=version (ou juste paquet pour la dernière version)
+apache2=2.4.62-1~deb12u2
+nginx
+htop=3.2.2-2
+curl
+fail2ban=1.0.2-2
